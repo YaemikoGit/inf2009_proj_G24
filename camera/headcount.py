@@ -135,6 +135,9 @@ def detect_faces_and_pose(frame):
 
     cv2.putText(frame, f"Headcount: {headcount}", (10, 30),
                 cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
+    
+    print("YUface raw output:", faces[0])
+    print("Length:", len(faces[0]))
 
     return frame
 
