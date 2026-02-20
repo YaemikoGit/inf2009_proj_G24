@@ -5,7 +5,7 @@ import numpy as np
 # Load the DNN face detector
 net = cv2.dnn.readNetFromCaffe(
     "deploy.prototxt",
-    "res10_300x300_ssd_iter_140000_fp16.caffemodel"
+    "res10_300x300_ssd_iter_140000.caffemodel"
 )
 
 app = Flask(__name__)
