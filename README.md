@@ -30,7 +30,7 @@ This project proposes an edge-based classroom environment analytics system that 
 
 
 ## SetUp - (!! TO BE DONE IN YOUR RASPBERRY PI VIA REALVNC !!)
-2. **Create virtual environment (unless your pi allows you to do step 2 directly then skip this step)**:
+1. **Create virtual environment (unless your pi allows you to do step 2 directly then skip this step)**:
    Create a `.env` file in the root directory of the project folder.
    ```bash
    python -m venv env
@@ -48,7 +48,7 @@ This project proposes an edge-based classroom environment analytics system that 
    python app.py
    ```
 
-3. **Copy the url into your laptop browser (raspberry-pi-ip will be the IP address you have set)**: 
+4. **Copy the url into your laptop browser (raspberry-pi-ip will be the IP address you have set)**: 
     ```bash
    http://<raspberry-pi-ip>:5000/
    ```
