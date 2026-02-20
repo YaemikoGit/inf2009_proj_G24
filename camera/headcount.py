@@ -65,36 +65,41 @@ def detect_faces_and_pose(frame):
 
         # YuNet returns 15 landmark values + face box
         # We only need the 5 landmark sets
-        lm = faces[0][4:19].reshape(5, 3)  # 5 points, (x, y, score)
+        # Extract raw landmark values after the 4 bbox values
+        lm_raw = faces[0][4:]
 
-        # Scale back to original ROI (not 320x320)
+        # YuNet gives 15 total values normally, but only first 9 here are valid (3 full landmarks)
+        # Valid landmark triples = floor(len / 3)
+        valid_triples = len(lm_raw) // 3
+
+        if valid_triples < 3:
+            # Not enough for head pose
+            continue
+
+        # Use only the first 3 landmarks
+        lm = np.array(lm_raw[:9]).reshape(3, 3)  # 3 full (x, y, score)
+
+        # Scale back to original ROI
         scale_x = face_w / 320
         scale_y = face_h / 320
 
         image_points = []
-        for i in range(5):
+        for i in range(3):
             lx = lm[i][0] * scale_x + x1
             ly = lm[i][1] * scale_y + y1
             image_points.append([lx, ly])
 
         image_points = np.array(image_points, dtype=np.float32)
 
-        # SAFETY CHECK: must have 5 landmarks
-        if image_points.shape != (5, 2):
-            continue
-
-        # Use a matching 3D model (5 points)
-        model_points_5 = np.array([
-            (-30, 40, 30),   # left eye
-            (30, 40, 30),    # right eye
-            (0, 0, 0),       # nose tip
-            (-25, -40, 20),  # left mouth
-            (25, -40, 20)    # right mouth
+        # 3D Model points (left eye, right eye, nose)
+        model_points = np.array([
+            (-30, 40, 30),  # left eye
+            (30, 40, 30),   # right eye
+            (0, 0, 0),      # nose tip
         ], dtype=np.float32)
 
         focal_length = w
         center = (w / 2, h / 2)
-
         camera_matrix = np.array([
             [focal_length, 0, center[0]],
             [0, focal_length, center[1]],
@@ -103,16 +108,14 @@ def detect_faces_and_pose(frame):
 
         dist_coeffs = np.zeros((4, 1))
 
-        # SAFETY CHECK: skip solvePnP if points invalid
-        if image_points.shape[0] < 4:
-            continue
-
+        # 3-point head pose MUST use these flags
         success, rot_vec, trans_vec = cv2.solvePnP(
-            model_points_5,
+            model_points,
             image_points,
             camera_matrix,
             dist_coeffs,
-            flags=cv2.SOLVEPNP_ITERATIVE
+            flags=cv2.SOLVEPNP_ITERATIVE,
+            useExtrinsicGuess=True
         )
 
         if not success:
@@ -124,6 +127,7 @@ def detect_faces_and_pose(frame):
 
         yaw = float(euler[1])
         pitch = float(euler[0])
+        roll = float(euler[2])
 
         cv2.putText(frame,
                     f"Y:{yaw:.1f} P:{pitch:.1f}",
@@ -135,9 +139,6 @@ def detect_faces_and_pose(frame):
 
     cv2.putText(frame, f"Headcount: {headcount}", (10, 30),
                 cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
-    
-    print("YUface raw output:", faces[0])
-    print("Length:", len(faces[0]))
 
     return frame
 
