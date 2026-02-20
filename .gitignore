@@ -1,0 +1,28 @@
+# .gitignore for Python
+
+# Byte-compiled
+__pycache__/
+*.pyc
+
+# Ignore environment file with secret keys
+.venv
+.env
+env/
+ENV/
+env.bak/
+venv.bak/
+venv/
+
+
+# Testing stuff
+generated-qr.html
+myinfo_result.html
+
+
+# Virtual environment (if any)
+venv/
+env/
+
+# OS-generated files
+.DS_Store
+Thumbs.db
