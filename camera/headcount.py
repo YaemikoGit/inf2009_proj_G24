@@ -29,7 +29,7 @@ model_points = np.array([
 def detect_faces_and_pose(frame):
     h, w = frame.shape[:2]
 
-    # --- STEP 1: SSD face detection ---
+    # ---------- 1) SSD detection (for long-range) ----------
     blob = cv2.dnn.blobFromImage(frame, 1.0, (300, 300),
                                  (104.0, 177.0, 123.0))
     ssd_net.setInput(blob)
@@ -45,7 +45,7 @@ def detect_faces_and_pose(frame):
 
     headcount = len(face_boxes)
 
-    # --- STEP 2: Landmarks + Head Pose with YuNet ---
+    # ---------- 2) YuNet (landmarks + pose) ----------
     for (x1, y1, x2, y2) in face_boxes:
         cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
 
@@ -53,52 +53,85 @@ def detect_faces_and_pose(frame):
         if face.size == 0:
             continue
 
-        # Run YuNet for landmarks
+        face_h, face_w = face.shape[:2]
+
+        # Resize for YuNet
         resized = cv2.resize(face, (320, 320))
+        yunet.setInputSize((320, 320))
         _, faces = yunet.detect(resized)
+
         if faces is None:
             continue
 
-        # YuNet outputs 5 facial landmarks
-        # shape: (N, 15) — xy pairs for 5 key points
-        landmarks = faces[0].reshape(-1, 3)
+        # YuNet returns 15 landmark values + face box
+        # We only need the 5 landmark sets
+        lm = faces[0][4:19].reshape(5, 3)  # 5 points, (x, y, score)
 
-        image_points = np.array([
-            landmarks[0][:2], # left eye
-            landmarks[1][:2], # right eye
-            landmarks[2][:2], # nose tip
-            landmarks[3][:2], # left mouth
-            landmarks[4][:2]  # right mouth
+        # Scale back to original ROI (not 320x320)
+        scale_x = face_w / 320
+        scale_y = face_h / 320
+
+        image_points = []
+        for i in range(5):
+            lx = lm[i][0] * scale_x + x1
+            ly = lm[i][1] * scale_y + y1
+            image_points.append([lx, ly])
+
+        image_points = np.array(image_points, dtype=np.float32)
+
+        # SAFETY CHECK: must have 5 landmarks
+        if image_points.shape != (5, 2):
+            continue
+
+        # Use a matching 3D model (5 points)
+        model_points_5 = np.array([
+            (-30, 40, 30),   # left eye
+            (30, 40, 30),    # right eye
+            (0, 0, 0),       # nose tip
+            (-25, -40, 20),  # left mouth
+            (25, -40, 20)    # right mouth
         ], dtype=np.float32)
 
-        # Camera intrinsics
         focal_length = w
         center = (w / 2, h / 2)
+
         camera_matrix = np.array([
             [focal_length, 0, center[0]],
             [0, focal_length, center[1]],
             [0, 0, 1]
-        ])
+        ], dtype=np.float32)
 
         dist_coeffs = np.zeros((4, 1))
 
+        # SAFETY CHECK: skip solvePnP if points invalid
+        if image_points.shape[0] < 4:
+            continue
+
         success, rot_vec, trans_vec = cv2.solvePnP(
-            model_points, image_points, camera_matrix, dist_coeffs
+            model_points_5,
+            image_points,
+            camera_matrix,
+            dist_coeffs,
+            flags=cv2.SOLVEPNP_ITERATIVE
         )
 
-        if success:
-            rot_mat, _ = cv2.Rodrigues(rot_vec)
-            pose_mat = cv2.hconcat((rot_mat, trans_vec))
-            _, _, _, _, _, _, euler_angles = cv2.decomposeProjectionMatrix(pose_mat)
+        if not success:
+            continue
 
-            yaw = euler_angles[1][0]
-            pitch = euler_angles[0][0]
-            roll = euler_angles[2][0]
+        rot_mat, _ = cv2.Rodrigues(rot_vec)
+        pose_mat = cv2.hconcat((rot_mat, trans_vec))
+        _, _, _, _, _, _, euler = cv2.decomposeProjectionMatrix(pose_mat)
 
-            cv2.putText(frame, f"Y:{yaw:.1f} P:{pitch:.1f}", 
-                        (x1, y1 - 10),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.5,
-                        (255, 0, 0), 2)
+        yaw = float(euler[1])
+        pitch = float(euler[0])
+
+        cv2.putText(frame,
+                    f"Y:{yaw:.1f} P:{pitch:.1f}",
+                    (x1, y1 - 10),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.5,
+                    (255, 0, 0),
+                    2)
 
     cv2.putText(frame, f"Headcount: {headcount}", (10, 30),
                 cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
