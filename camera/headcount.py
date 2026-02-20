@@ -25,128 +25,135 @@ model_points = np.array([
     (150.0, -150.0, -125.0)   # right mouth
 ], dtype=np.float32)
 
+frame_counter = 0
 
 def detect_faces_and_pose(frame):
-    h, w = frame.shape[:2]
+    
+    frame_counter += 1
 
-    # ---------- 1) SSD detection (for long-range) ----------
-    blob = cv2.dnn.blobFromImage(frame, 1.0, (300, 300),
-                                 (104.0, 177.0, 123.0))
-    ssd_net.setInput(blob)
-    detections = ssd_net.forward()
-
-    face_boxes = []
-    for i in range(detections.shape[2]):
-        confidence = detections[0, 0, i, 2]
-        if confidence > 0.5:
-            box = detections[0, 0, i, 3:7] * np.array([w, h, w, h])
-            (x1, y1, x2, y2) = box.astype(int)
-            face_boxes.append((x1, y1, x2, y2))
-
-    headcount = len(face_boxes)
-
-    # ---------- 2) YuNet (landmarks + pose) ----------
-    for (x1, y1, x2, y2) in face_boxes:
-        cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
-
-        face = frame[y1:y2, x1:x2]
-        if face.size == 0:
-            continue
-
-        face_h, face_w = face.shape[:2]
-
-        # Resize for YuNet
-        resized = cv2.resize(face, (320, 320))
-        yunet.setInputSize((320, 320))
-        _, faces = yunet.detect(resized)
-
-        if faces is None:
-            continue
+    if frame_counter % 5 != 0:
         
-        focal_length = w
-        center = (w / 2, h / 2)
-        camera_matrix = np.array([
-            [focal_length, 0, center[0]],
-            [0, focal_length, center[1]],
-            [0, 0, 1]
-        ], dtype=np.float32)
+    
+        h, w = frame.shape[:2]
 
-        dist_coeffs = np.zeros((4, 1))
-        # ---------------------------
-        # 5-POINT LANDMARK EXTRACTION
-        # ---------------------------
+        # ---------- 1) SSD detection (for long-range) ----------
+        blob = cv2.dnn.blobFromImage(frame, 1.0, (300, 300),
+                                    (104.0, 177.0, 123.0))
+        ssd_net.setInput(blob)
+        detections = ssd_net.forward()
 
-        face_data = faces[0]
+        face_boxes = []
+        for i in range(detections.shape[2]):
+            confidence = detections[0, 0, i, 2]
+            if confidence > 0.5:
+                box = detections[0, 0, i, 3:7] * np.array([w, h, w, h])
+                (x1, y1, x2, y2) = box.astype(int)
+                face_boxes.append((x1, y1, x2, y2))
 
-        # YuNet format:
-        # [x, y, w, h, score,
-        #  l0x, l0y,
-        #  l1x, l1y,
-        #  l2x, l2y,
-        #  l3x, l3y,
-        #  l4x, l4y]
+        headcount = len(face_boxes)
 
-        landmarks = face_data[5:15].reshape((5, 2))
+        # ---------- 2) YuNet (landmarks + pose) ----------
+        for (x1, y1, x2, y2) in face_boxes:
+            cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
 
-        # Scale back to original frame coordinates
-        scale_x = face_w / 320
-        scale_y = face_h / 320
+            face = frame[y1:y2, x1:x2]
+            if face.size == 0:
+                continue
 
-        image_points = []
+            face_h, face_w = face.shape[:2]
 
-        for (lx, ly) in landmarks:
-            x = lx * scale_x + x1
-            y = ly * scale_y + y1
-            image_points.append([x, y])
+            # Resize for YuNet
+            resized = cv2.resize(face, (320, 320))
+            yunet.setInputSize((320, 320))
+            _, faces = yunet.detect(resized)
 
-        image_points = np.array(image_points, dtype=np.float32)
+            if faces is None:
+                continue
+            
+            focal_length = w
+            center = (w / 2, h / 2)
+            camera_matrix = np.array([
+                [focal_length, 0, center[0]],
+                [0, focal_length, center[1]],
+                [0, 0, 1]
+            ], dtype=np.float32)
 
-        if image_points.shape[0] != 5:
-            continue
+            dist_coeffs = np.zeros((4, 1))
+            # ---------------------------
+            # 5-POINT LANDMARK EXTRACTION
+            # ---------------------------
 
-        # ---------------------------
-        # MATCHING 3D MODEL POINTS
-        # ---------------------------
+            face_data = faces[0]
 
-        model_points = np.array([
-            (-30.0,  40.0,  30.0),   # Left eye
-            ( 30.0,  40.0,  30.0),   # Right eye
-            (  0.0,   0.0,   0.0),   # Nose tip
-            (-25.0, -30.0,  20.0),   # Left mouth
-            ( 25.0, -30.0,  20.0)    # Right mouth
-        ], dtype=np.float32)
+            # YuNet format:
+            # [x, y, w, h, score,
+            #  l0x, l0y,
+            #  l1x, l1y,
+            #  l2x, l2y,
+            #  l3x, l3y,
+            #  l4x, l4y]
 
-        success, rot_vec, trans_vec = cv2.solvePnP(
-            model_points,
-            image_points,
-            camera_matrix,
-            dist_coeffs,
-            flags=cv2.SOLVEPNP_EPNP
-        )
+            landmarks = face_data[5:15].reshape((5, 2))
 
-        if not success:
-            continue
-        
+            # Scale back to original frame coordinates
+            scale_x = face_w / 320
+            scale_y = face_h / 320
 
-        rot_mat, _ = cv2.Rodrigues(rot_vec)
-        pose_mat = cv2.hconcat((rot_mat, trans_vec))
-        _, _, _, _, _, _, euler = cv2.decomposeProjectionMatrix(pose_mat)
+            image_points = []
 
-        pitch, yaw, roll = euler.flatten()
-        pitch = float(pitch)
-        yaw = float(yaw)
-        roll = float(roll)
+            for (lx, ly) in landmarks:
+                x = lx * scale_x + x1
+                y = ly * scale_y + y1
+                image_points.append([x, y])
 
-        cv2.putText(frame,
-                    f"Y:{yaw:.1f} P:{pitch:.1f}",
-                    (x1, y1 - 10),
-                    cv2.FONT_HERSHEY_SIMPLEX,
-                    0.5,
-                    (255, 0, 0),
-                    2)
+            image_points = np.array(image_points, dtype=np.float32)
 
-    cv2.putText(frame, f"Headcount: {headcount}", (10, 30),
-                cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
+            if image_points.shape[0] != 5:
+                continue
+
+            # ---------------------------
+            # MATCHING 3D MODEL POINTS
+            # ---------------------------
+
+            model_points = np.array([
+                (-30.0,  40.0,  30.0),   # Left eye
+                ( 30.0,  40.0,  30.0),   # Right eye
+                (  0.0,   0.0,   0.0),   # Nose tip
+                (-25.0, -30.0,  20.0),   # Left mouth
+                ( 25.0, -30.0,  20.0)    # Right mouth
+            ], dtype=np.float32)
+
+            success, rot_vec, trans_vec = cv2.solvePnP(
+                model_points,
+                image_points,
+                camera_matrix,
+                dist_coeffs,
+                flags=cv2.SOLVEPNP_EPNP
+            )
+
+            if not success:
+                continue
+            
+
+            rot_mat, _ = cv2.Rodrigues(rot_vec)
+            pose_mat = cv2.hconcat((rot_mat, trans_vec))
+            _, _, _, _, _, _, euler = cv2.decomposeProjectionMatrix(pose_mat)
+
+            pitch, yaw, roll = euler.flatten()
+            pitch = float(pitch)
+            yaw = float(yaw)
+            roll = float(roll)
+
+            cv2.putText(frame,
+                        f"Y:{yaw:.1f} P:{pitch:.1f}",
+                        (x1, y1 - 10),
+                        cv2.FONT_HERSHEY_SIMPLEX,
+                        0.5,
+                        (255, 0, 0),
+                        2)
+
+        cv2.putText(frame, f"Headcount: {headcount}", (10, 30),
+                    cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
 
     return frame
 
