@@ -29,11 +29,6 @@ frame_counter = 0
 
 def detect_faces_and_pose(frame):
     
-    frame_counter += 1
-
-    if frame_counter % 5 != 0:
-        return frame
-    
     h, w = frame.shape[:2]
 
     # ---------- 1) SSD detection (for long-range) ----------
