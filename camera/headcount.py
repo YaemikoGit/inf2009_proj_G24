@@ -121,7 +121,7 @@ def detect_faces_and_pose(frame):
             image_points,
             camera_matrix,
             dist_coeffs,
-            flags=cv2.SOLVEPNP_ITERATIVE
+            flags=cv2.SOLVEPNP_EPNP
         )
 
         if not success:
