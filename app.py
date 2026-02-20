@@ -11,9 +11,22 @@ def generate_frames():
         success, frame = camera.read()
         if not success:
             break
-        else:
-            ret, buffer = cv2.imencode('.jpg', frame)
-            frame = buffer.tobytes()
+        
+        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        faces = face_cascade.detectMultiScale(gray, 1.3, 5)
+
+        # Draw boxes + count
+        for (x, y, w, h) in faces:
+            cv2.rectangle(frame, (x, y), (x+w, y+h), (0,255,0), 2)
+
+        # Add headcount text
+        count = len(faces)
+        cv2.putText(frame, f"Headcount: {count}", (10, 30),
+                    cv2.FONT_HERSHEY_SIMPLEX, 1, (0,255,0), 2)
+
+        # Encode and stream
+        ret, buffer = cv2.imencode('.jpg', frame)
+        frame = buffer.tobytes()
 
         yield (b'--frame\r\n'
                b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
