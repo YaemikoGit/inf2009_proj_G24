@@ -62,42 +62,7 @@ def detect_faces_and_pose(frame):
 
         if faces is None:
             continue
-
-        # YuNet returns 15 landmark values + face box
-        # We only need the 5 landmark sets
-        # Extract raw landmark values after the 4 bbox values
-        lm_raw = faces[0][4:]
-
-        # YuNet gives 15 total values normally, but only first 9 here are valid (3 full landmarks)
-        # Valid landmark triples = floor(len / 3)
-        valid_triples = len(lm_raw) // 3
-
-        if valid_triples < 3:
-            # Not enough for head pose
-            continue
-
-        # Use only the first 3 landmarks
-        lm = np.array(lm_raw[:9]).reshape(3, 3)  # 3 full (x, y, score)
-
-        # Scale back to original ROI
-        scale_x = face_w / 320
-        scale_y = face_h / 320
-
-        image_points = []
-        for i in range(3):
-            lx = lm[i][0] * scale_x + x1
-            ly = lm[i][1] * scale_y + y1
-            image_points.append([lx, ly])
-
-        image_points = np.array(image_points, dtype=np.float32)
-
-        # 3D Model points (left eye, right eye, nose)
-        model_points = np.array([
-            (-30, 40, 30),  # left eye
-            (30, 40, 30),   # right eye
-            (0, 0, 0),      # nose tip
-        ], dtype=np.float32)
-
+        
         focal_length = w
         center = (w / 2, h / 2)
         camera_matrix = np.array([
@@ -107,19 +72,48 @@ def detect_faces_and_pose(frame):
         ], dtype=np.float32)
 
         dist_coeffs = np.zeros((4, 1))
+        # ---------------------------
+        # 5-POINT LANDMARK EXTRACTION
+        # ---------------------------
 
-        # We already built image_points above (3 points)
-        # image_points = [[left_eye], [right_eye], [nose]]
+        face_data = faces[0]
 
-        if len(image_points) != 3:
-            continue
+        # YuNet format:
+        # [x, y, w, h, score,
+        #  l0x, l0y,
+        #  l1x, l1y,
+        #  l2x, l2y,
+        #  l3x, l3y,
+        #  l4x, l4y]
+
+        landmarks = face_data[5:15].reshape((5, 2))
+
+        # Scale back to original frame coordinates
+        scale_x = face_w / 320
+        scale_y = face_h / 320
+
+        image_points = []
+
+        for (lx, ly) in landmarks:
+            x = lx * scale_x + x1
+            y = ly * scale_y + y1
+            image_points.append([x, y])
 
         image_points = np.array(image_points, dtype=np.float32)
 
+        if image_points.shape[0] != 5:
+            continue
+
+        # ---------------------------
+        # MATCHING 3D MODEL POINTS
+        # ---------------------------
+
         model_points = np.array([
-            (-30.0, 0.0, 0.0),   # Left eye
-            (30.0, 0.0, 0.0),    # Right eye
-            (0.0, -30.0, -30.0)  # Nose tip
+            (-30.0,  40.0,  30.0),   # Left eye
+            ( 30.0,  40.0,  30.0),   # Right eye
+            (  0.0,   0.0,   0.0),   # Nose tip
+            (-25.0, -30.0,  20.0),   # Left mouth
+            ( 25.0, -30.0,  20.0)    # Right mouth
         ], dtype=np.float32)
 
         success, rot_vec, trans_vec = cv2.solvePnP(
@@ -132,6 +126,7 @@ def detect_faces_and_pose(frame):
 
         if not success:
             continue
+        
 
         rot_mat, _ = cv2.Rodrigues(rot_vec)
         pose_mat = cv2.hconcat((rot_mat, trans_vec))
