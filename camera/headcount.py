@@ -132,9 +132,10 @@ def detect_faces_and_pose(frame):
         pose_mat = cv2.hconcat((rot_mat, trans_vec))
         _, _, _, _, _, _, euler = cv2.decomposeProjectionMatrix(pose_mat)
 
-        yaw = float(euler[1])
-        pitch = float(euler[0])
-        roll = float(euler[2])
+        pitch, yaw, roll = euler.flatten()
+        pitch = float(pitch)
+        yaw = float(yaw)
+        roll = float(roll)
 
         cv2.putText(frame,
                     f"Y:{yaw:.1f} P:{pitch:.1f}",
