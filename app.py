@@ -13,24 +13,31 @@ def generate_frames():
             break
         
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        faces = face_cascade.detectMultiScale(gray, 1.3, 5)
+        
+        # Detect ALL faces (multi-scale)
+        faces = face_cascade.detectMultiScale(
+            gray,
+            scaleFactor=1.1,
+            minNeighbors=5,
+            minSize=(30, 30)
+        )
 
-        # Draw boxes + count
+        # Draw a green rectangle around every detected face
         for (x, y, w, h) in faces:
-            cv2.rectangle(frame, (x, y), (x+w, y+h), (0,255,0), 2)
+            cv2.rectangle(frame, (x, y), (x+w, y+h), (0, 255, 0), 2)
 
         # Add headcount text
         count = len(faces)
         cv2.putText(frame, f"Headcount: {count}", (10, 30),
                     cv2.FONT_HERSHEY_SIMPLEX, 1, (0,255,0), 2)
 
-        # Encode and stream
+        # Stream frame
         ret, buffer = cv2.imencode('.jpg', frame)
         frame = buffer.tobytes()
 
         yield (b'--frame\r\n'
                b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
-
+        
 @app.route('/')
 def index():
     return render_template('index.html')
