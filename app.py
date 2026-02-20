@@ -1,12 +1,14 @@
 from flask import Flask, render_template, Response
-import cv2
+import cv2, os
 import numpy as np
 
 # Load the DNN face detector
-net = cv2.dnn.readNetFromCaffe(
-    "deploy.prototxt",
-    "res10_300x300_ssd_iter_140000.caffemodel"
-)
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+prototxt_path = os.path.join(BASE_DIR, "models", "deploy.prototxt")
+model_path = os.path.join(BASE_DIR, "models", "res10_300x300_ssd_iter_140000.caffemodel")
+
+net = cv2.dnn.readNetFromCaffe(prototxt_path, model_path)
 
 app = Flask(__name__)
 camera = cv2.VideoCapture(0)

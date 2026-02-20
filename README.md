@@ -10,7 +10,6 @@ This project proposes an edge-based classroom environment analytics system that 
 * **Temperature Sensor:** capture classroom temperature to monitor thermal conditions.
 * **Air Quality Sensor:** measure CO2 and other air quality indicators to evaluate indoor environmental conditions .
 
-
 ## Technologies Used
 * **Language:** Python, JavaScript
 * **UI:** HTML, BootStrap 
@@ -19,3 +18,24 @@ This project proposes an edge-based classroom environment analytics system that 
 
 ## Contributors
 
+
+
+## SetUp -- (!! TO BE DONE IN YOUR RASPBERRY PI VIA REALVNC !!)
+2. **Create virtual environment (unless your pi allows you to do step 2 directly then skip this step)**:
+   Create a `.env` file in the root directory of the project folder.
+   ```bash
+   python -m venv env
+   source env\bin\activate
+   ```
+
+2. **Install Dependencies**:
+   ```bash
+   pip install -r requirements.txt
+   bash download_models.sh
+   ```
+
+3. **Run app.py**:
+   ```bash
+   pip install -r requirements.txt
+   nano download_models.sh
+   ```
