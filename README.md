@@ -34,7 +34,7 @@ This project proposes an edge-based classroom environment analytics system that 
    Create a `.env` file in the root directory of the project folder.
    ```bash
    python -m venv env
-   source env\bin\activate
+   source env/bin/activate
    ```
 
 2. **Install Dependencies**:
