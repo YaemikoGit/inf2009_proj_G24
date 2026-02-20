@@ -4,7 +4,7 @@ from flask import Flask, render_template, Response
 
 
 #Import other camera modules as needed
-from camera.headcount import generate_frames
+from camera.headcount import generate_frames, detect_faces_and_pose
 
 #Import other sensor modules as needed
 from sensors.temperature import get_temperature 
