@@ -1,6 +1,7 @@
-# INF2009 Edge Computing & Analytics Project
+# INF2009 Edge Computing & Analytics Project by Group 24
 ## Smart classroom analytics system as a functional prototype that integrates vision-based student attention estimation together with classroom environmental sensing
 This project proposes an edge-based classroom environment analytics system that integrates attention estimation with environmental sensing to provide meaningful insights into learning conditions. In this project, student attention is inferred through visual behavioural cues such as head orientation and gaze direction, which are widely used indicators of engagement in smart classroom research.
+
 
 ## System Architecture
 * **Raspberry Pi 5:** primary edge processing unit.
@@ -10,17 +11,25 @@ This project proposes an edge-based classroom environment analytics system that 
 * **Temperature Sensor:** capture classroom temperature to monitor thermal conditions.
 * **Air Quality Sensor:** measure CO2 and other air quality indicators to evaluate indoor environmental conditions .
 
+
 ## Technologies Used
 * **Language:** Python, JavaScript
 * **UI:** HTML, BootStrap 
 * **Backend & Database:** Neon Postgres (TBC)
 * **Build System:** Flask
 
-## Contributors
+
+## Contributors of Group 24
+| Name                   | Student ID                                      |
+| ---------------------- | ----------------------------------------------- |
+| Chua Xin Jing          | [2302123](mailto:2302123@sit.singaporetech.edu.sg) |
+| Liew DaiXuan           | [2302089](mailto:2302089@sit.singaporetech.edu.sg) |
+| Shaw Aradhana          | [2302229](mailto:2302229@sit.singaporetech.edu.sg) |
+| Xavier Teh Jun Ying    | [2301801](mailto:2301801@sit.singaporetech.edu.sg) |
+| Yen Cheng Keh Yolanda  | [2302026](mailto:2302026@sit.singaporetech.edu.sg) |
 
 
-
-## SetUp -- (!! TO BE DONE IN YOUR RASPBERRY PI VIA REALVNC !!)
+## SetUp - (!! TO BE DONE IN YOUR RASPBERRY PI VIA REALVNC !!)
 2. **Create virtual environment (unless your pi allows you to do step 2 directly then skip this step)**:
    Create a `.env` file in the root directory of the project folder.
    ```bash
@@ -36,6 +45,10 @@ This project proposes an edge-based classroom environment analytics system that 
 
 3. **Run app.py**:
    ```bash
-   pip install -r requirements.txt
-   nano download_models.sh
+   python app.py
+   ```
+
+3. **Copy the url into your laptop browser (raspberry-pi-ip will be the IP address you have set)**: 
+    ```bash
+   http://<raspberry-pi-ip>:5000/
    ```
