@@ -9,6 +9,12 @@ from camera.headcount import generate_frames
 #Import other sensor modules as needed
 from sensors.temperature import get_temperature 
 
+latest_stats = {
+    "headcount": 0,
+    "attentive": 0,
+    "distracted": 0
+}
+
 app = Flask(__name__)
 
 
@@ -19,8 +25,13 @@ def index():
 
 @app.route('/video_feed')
 def video_feed():
-    return Response(generate_frames(),
+    return Response(
+        generate_frames(latest_stats),
                     mimetype='multipart/x-mixed-replace; boundary=frame')
+    
+@app.route('/stats')
+def stats():
+    return latest_stats
 
 
 if __name__ == "__main__":

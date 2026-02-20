@@ -1,9 +1,46 @@
-<html>
+{% comment %} <html>
 <head>
     <title>Smart Classroom Dashboard</title>
 </head>
 <body>
     <h1>Live Camera Feed</h1>
     <img src="{{ url_for('video_feed') }}" width="640">
+</body>
+</html> {% endcomment %}
+
+<html>
+<head>
+    <title>Smart Classroom Dashboard</title>
+    <script>
+        function fetchStats() {
+            fetch('/stats')
+                .then(response => response.json())
+                .then(data => {
+                    document.getElementById("headcount").innerText = data.headcount;
+                    document.getElementById("attentive").innerText = data.attentive;
+                    document.getElementById("distracted").innerText = data.distracted;
+                });
+        }
+
+        setInterval(fetchStats, 1000);
+    </script>
+</head>
+
+<body>
+    <h1>Smart Classroom Dashboard</h1>
+
+    <h2>Live Camera Feed</h2>
+    <img src="{{ url_for('video_feed') }}" width="640">
+
+    <h2>Classroom Analytics</h2>
+    <p>Total Headcount: <strong id="headcount">0</strong></p>
+    <p>Attentive Students: <strong id="attentive">0</strong></p>
+    <p>Not Facing Front: <strong id="distracted">0</strong></p>
+
+    <h2>Other Sensors (Coming Soon)</h2>
+    <p>Temperature: -- °C</p>
+    <p>Humidity: -- %</p>
+    <p>Noise Level: -- dB</p>
+    <p>Air Quality: -- AQI</p>
 </body>
 </html>

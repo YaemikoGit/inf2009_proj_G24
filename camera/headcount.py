@@ -25,10 +25,10 @@ model_points = np.array([
     (150.0, -150.0, -125.0)   # right mouth
 ], dtype=np.float32)
 
-frame_counter = 0
 
 def detect_faces_and_pose(frame):
-    
+    attentive_count = 0
+    distracted_count = 0
     h, w = frame.shape[:2]
 
     # ---------- 1) SSD detection (for long-range) ----------
@@ -139,28 +139,45 @@ def detect_faces_and_pose(frame):
         yaw = float(yaw)
         roll = float(roll)
 
+        # ---------- Classify Attention ----------
+        if abs(yaw) < 20 and abs(pitch) < 20:
+            status = "Attentive"
+            color = (0, 255, 0)
+            attentive_count += 1
+        else:
+            status = "Not Facing Front"
+            color = (0, 0, 255)
+            distracted_count += 1
+
+        # Show status
         cv2.putText(frame,
-                    f"Y:{yaw:.1f} P:{pitch:.1f}",
+                    f"{status}",
                     (x1, y1 - 10),
                     cv2.FONT_HERSHEY_SIMPLEX,
-                    0.5,
-                    (255, 0, 0),
+                    0.6,
+                    color,
                     2)
-
+        
     cv2.putText(frame, f"Headcount: {headcount}", (10, 30),
                 cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
 
-    return frame
+    return frame, headcount, attentive_count, distracted_count
 
 
-def generate_frames():
+
+
+def generate_frames(latest_stats):
     while True:
         try:
             success, frame = camera.read()
             if not success:
                 break
-
-            frame = detect_faces_and_pose(frame)
+            
+            latest_stats["headcount"] = headcount
+            latest_stats["attentive"] = attentive
+            latest_stats["distracted"] = distracted
+            
+            frame, headcount, attentive, distracted = detect_faces_and_pose(frame)
 
             ret, buffer = cv2.imencode('.jpg', frame)
             frame = buffer.tobytes()
