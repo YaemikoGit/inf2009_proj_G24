@@ -1,111 +1,196 @@
+<!DOCTYPE html>
 <html>
-  <head>
-    <title>Smart Classroom Dashboard</title>
-
+<head>
+    <title>Classroom Analytics</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.6.1/socket.io.min.js"></script>
     <style>
-      body {
-        margin: 0;
-        font-family: Arial, sans-serif;
-        background-color: #f4f6f9;
-      }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
 
-      h1 {
-        text-align: center;
-        padding: 20px;
-        background-color: #1f2937;
-        color: white;
-        margin: 0;
-      }
+        body {
+            font-family: Arial, sans-serif;
+            background: #f0f0f0;
+            padding: 30px;
+        }
 
-      .container {
-        display: flex;
-        padding: 20px;
-        gap: 20px;
-      }
+        h1 {
+            text-align: center;
+            margin-bottom: 24px;
+            color: #333;
+        }
 
-      .left-panel {
-        flex: 2;
-        background: white;
-        padding: 20px;
-        border-radius: 12px;
-        box-shadow: 0 4px 10px rgba(0, 0, 0, 0.08);
-      }
+        .dashboard {
+            display: flex;
+            gap: 24px;
+            align-items: flex-start;
+            max-width: 1200px;
+            margin: 0 auto;
+        }
 
-      .right-panel {
-        flex: 1;
-        display: flex;
-        flex-direction: column;
-        gap: 20px;
-      }
+        /* LEFT — Camera Feed */
+        .camera-panel {
+            flex: 2;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            padding: 20px;
+        }
 
-      .card {
-        background: white;
-        padding: 20px;
-        border-radius: 12px;
-        box-shadow: 0 4px 10px rgba(0, 0, 0, 0.08);
-      }
+        .camera-panel h2 {
+            margin-bottom: 14px;
+            color: #333;
+            font-size: 1.1em;
+        }
 
-      .status {
-        font-size: 20px;
-        font-weight: bold;
-        margin-top: 10px;
-      }
+        .camera-panel img {
+            width: 100%;
+            border-radius: 8px;
+            background: #222;
+            min-height: 360px;
+            object-fit: cover;
+            display: block;
+        }
 
-      .light-on {
-        color: green;
-      }
+        .no-image {
+            width: 100%;
+            min-height: 360px;
+            background: #222;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #888;
+            font-size: 1em;
+        }
 
-      .light-off {
-        color: red;
-      }
+        /* RIGHT — Sensor Cards */
+        .sensor-panel {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
 
-      img {
-        width: 100%;
-        border-radius: 10px;
-      }
+        .card {
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            padding: 24px;
+            text-align: center;
+        }
+
+        .card h2 {
+            font-size: 1em;
+            color: #888;
+            margin-bottom: 10px;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        .value {
+            font-size: 2.2em;
+            font-weight: bold;
+            color: #333;
+        }
+
+        .value.ok { color: #22c55e; }
+        .value.error { color: #ef4444; }
+
+        /* Status badge inside card */
+        .badge {
+            display: inline-block;
+            margin-top: 8px;
+            padding: 2px 12px;
+            border-radius: 99px;
+            font-size: 0.78em;
+            font-weight: bold;
+            text-transform: uppercase;
+        }
+
+        .badge.ok { background: #dcfce7; color: #16a34a; }
+        .badge.error { background: #fee2e2; color: #dc2626; }
+
+        .timestamp {
+            color: #aaa;
+            font-size: 0.78em;
+            margin-top: 8px;
+        }
     </style>
-  </head>
+</head>
+<body>
+    <h1>🏫 Classroom Analytics</h1>
 
-  <body>
-    <h1>Smart Classroom Dashboard</h1>
+    <div class="dashboard">
 
-    <div class="container">
-      <div class="left-panel">
-        <h2>Live Camera Feed</h2>
-        <img src="{{ url_for('video_feed') }}" />
-      </div>
-
-      <div class="right-panel">
-        <div class="card">
-          <h2>Light Sensor</h2>
-          <div id="lightStatus" class="status">Loading...</div>
+        <!-- LEFT: Camera Snapshot -->
+        <div class="camera-panel">
+            <h2>📷 Latest Snapshot</h2>
+            {% if headcount.image %}
+                <img id="snapshot" src="data:image/jpeg;base64,{{ headcount.image }}" alt="Classroom snapshot">
+            {% else %}
+                <div class="no-image" id="no-image-placeholder">⏳ Waiting for snapshot...</div>
+                <img id="snapshot" src="" alt="Classroom snapshot" style="display:none;">
+            {% endif %}
+            <p class="timestamp" id="snapshot-time">
+                Last snapshot: {{ headcount.timestamp or 'Never' }}
+            </p>
         </div>
-      </div>
+
+        <!-- RIGHT: Sensor Cards -->
+        <div class="sensor-panel">
+
+            <!-- Light Sensor Card (duplicate this for other sensors) -->
+            <div class="card">
+                <h2>💡 Light Sensor</h2>
+                {% if light.status == 'ok' %}
+                    <div class="value ok" id="light-value">{{ light.light }}</div>
+                    <span class="badge ok" id="sensor-status">{{ light.status }}</span>
+                {% else %}
+                    <div class="value error" id="light-value">{{ light.message or 'Sensor error' }}</div>
+                    <span class="badge error" id="sensor-status">{{ light.status or 'error' }}</span>
+                {% endif %}
+                <p class="timestamp" id="light-time">{{ light.timestamp or 'Never' }}</p>
+            </div>
+
+            <!-- Duplicate above card for each new sensor, e.g. Temperature -->
+            <!--
+            <div class="card">
+                <h2>🌡️ Temperature Sensor</h2>
+                <div class="value ok" id="temp-value">--</div>
+                <span class="badge ok" id="temp-status">waiting</span>
+                <p class="timestamp" id="temp-time">Never</p>
+            </div>
+            -->
+
+        </div>
     </div>
 
     <script>
-      function updateLight() {
-        fetch("/light")
-          .then((response) => response.json())
-          .then((data) => {
-            const statusElement = document.getElementById("lightStatus");
+        const socket = io();
 
-            if (data.light) {
-              statusElement.innerText = "Lights ON";
-              statusElement.className = "status light-on";
-            } else {
-              statusElement.innerText = "Lights OFF";
-              statusElement.className = "status light-off";
+        socket.on("light_update", (data) => {
+            const value = document.getElementById("light-value");
+            const status = document.getElementById("sensor-status");
+            const time = document.getElementById("light-time");
+
+            value.textContent = data.light || data.message || "Error";
+            value.className = "value " + (data.status === "ok" ? "ok" : "error");
+
+            status.textContent = data.status || "error";
+            status.className = "badge " + (data.status === "ok" ? "ok" : "error");
+
+            time.textContent = data.timestamp || "";
+        });
+
+        socket.on("headcount_update", (data) => {
+            if (data.image) {
+                const img = document.getElementById("snapshot");
+                const placeholder = document.getElementById("no-image-placeholder");
+                img.src = "data:image/jpeg;base64," + data.image;
+                img.style.display = "block";
+                if (placeholder) placeholder.style.display = "none";
+                document.getElementById("snapshot-time").textContent = "Last snapshot: " + data.timestamp;
             }
-          })
-          .catch(() => {
-            document.getElementById("lightStatus").innerText =
-              "Error reading sensor";
-          });
-      }
-
-      setInterval(updateLight, 5000);
-      updateLight();
+        });
     </script>
-  </body>
+</body>
 </html>
