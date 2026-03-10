@@ -125,6 +125,20 @@
         <!-- LEFT: Camera Snapshot -->
         <div class="camera-panel">
             <h2>Latest Snapshot</h2>
+
+            {% if headcount.snapshot %}
+                <img id="snapshot" src="data:image/jpeg;base64,{{ headcount.snapshot }}">
+            {% else %}
+                <div class="no-image" id="no-image-placeholder">Waiting for snapshot...</div>
+                <img id="snapshot" src="" style="display:none;">
+            {% endif %}
+
+            <p class="timestamp" id="snapshot-time">
+                Last snapshot: {{ headcount.timestamp or 'Never' }}
+            </p>
+        </div>
+        {% comment %} <div class="camera-panel">
+            <h2>Latest Snapshot</h2>
             {% if headcount.image %}
                 <img id="snapshot" src="data:image/jpeg;base64,{{ headcount.image }}" alt="Classroom snapshot">
             {% else %}
@@ -134,7 +148,7 @@
             <p class="timestamp" id="snapshot-time">
                 Last snapshot: {{ headcount.timestamp or 'Never' }}
             </p>
-        </div>
+        </div> {% endcomment %}
 
         <!-- RIGHT: Sensor Cards -->
         <div class="sensor-panel">
@@ -181,8 +195,22 @@
 
             time.textContent = data.timestamp || "";
         });
-
+        
         socket.on("headcount_update", (data) => {
+            if (data.snapshot) {
+                const img = document.getElementById("snapshot");
+                const placeholder = document.getElementById("no-image-placeholder");
+
+                img.src = "data:image/jpeg;base64," + data.snapshot;
+                img.style.display = "block";
+
+                if (placeholder) placeholder.style.display = "none";
+
+                document.getElementById("snapshot-time").textContent =
+                    "Last snapshot: " + data.timestamp;
+            }
+        });
+        {% comment %} socket.on("headcount_update", (data) => {
             if (data.image) {
                 const img = document.getElementById("snapshot");
                 const placeholder = document.getElementById("no-image-placeholder");
@@ -191,7 +219,7 @@
                 if (placeholder) placeholder.style.display = "none";
                 document.getElementById("snapshot-time").textContent = "Last snapshot: " + data.timestamp;
             }
-        });
+        }); {% endcomment %}
     </script>
 </body>
 </html>
