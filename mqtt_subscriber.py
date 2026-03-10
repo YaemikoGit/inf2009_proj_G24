@@ -10,6 +10,7 @@ app = Flask(__name__)
 socketio = SocketIO(app, cors_allowed_origins="*")
 
 # Store latest data separately
+latest_temp = {"status": "waiting", "temperature": "No data yet", "humidity": "No data yet", "timestamp": None}
 latest_light = {"status": "waiting", "light": "No data yet", "timestamp": None}
 latest_headcount = {"count": 0, "image": None, "timestamp": None}
 
@@ -36,6 +37,15 @@ def on_message(client, userdata, message):
         latest_light = payload
         print(f"Light update: {payload}")
         socketio.emit("light_update", payload)  # push to dashboard instantly
+        
+    elif message.topic == "sensors/temperature":
+        try:
+            latest_temp = payload
+            latest_temp["timestamp"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            print(f"Temperature update: {latest_temp}")
+            socketio.emit("temperature_update", latest_temp)  # push to dashboard instantly
+        except Exception as e:
+            print(f"Failed to handle temperature message: {e}")
 
     
     elif message.topic == "sensors/headcount":
@@ -51,6 +61,7 @@ def on_message(client, userdata, message):
 mqtt_client = mqtt.Client("Subscriber")
 mqtt_client.on_message = on_message
 mqtt_client.connect("10.48.179.202", 1883)
+mqtt_client.subscribe("sensors/temperature")
 mqtt_client.subscribe("sensors/light")
 mqtt_client.subscribe("sensors/headcount")  # subscribe to headcount too
 
@@ -65,6 +76,10 @@ def index():
                            light=latest_light,
                            headcount=latest_headcount)
 
+@app.route('/data/temperature')
+def data_temperature():
+    return jsonify(latest_temp)
+    
 @app.route('/data/light')
 def data_light():
     return jsonify(latest_light)

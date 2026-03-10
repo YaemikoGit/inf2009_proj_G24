@@ -6,16 +6,31 @@ import json
 import base64
 import cv2
 from sensors.light import get_light
+from sensors.temperature import get_temperature
 from camera.headcount import detect_faces_dnn, net, camera, detect_faces_and_pose
 
 # MQTT Setup
 client = mqtt.Client("Publisher")
 client.connect("10.48.179.202", 1883)
 
+TOPIC_TEMP = "sensors/temperature"
 TOPIC_LIGHT = "sensors/light"
 TOPIC_HEADCOUNT = "sensors/headcount"
 
 last_headcount = -1
+
+def publish_temperature():
+    try:
+        data = get_temperature()  # returns {'temperature': temp, 'humidity': humidity}
+        payload = {
+            "status": "ok",
+            "temperature": data['temperature'],
+            "humidity": data['humidity']
+        }
+    except Exception:
+        payload = {"status": "error", "message": "Temperature sensor not detected"}
+    client.publish(TOPIC_TEMP, json.dumps(payload))
+    return payload
 
 def publish_light_status():
     try:
@@ -90,10 +105,17 @@ def publish_headcount():
 
 
 if __name__ == "__main__":
+    last_temp_time = 0
     last_light_time = 0
     try:
         while True:
             now = time.time()
+
+            # Temp every 5 seconds (can be same or different interval)
+            if now - last_temp_time >= 5:
+                temp_result = publish_temperature()
+                print(f"Temperature: {temp_result}")
+                last_temp_time = now
 
             # Light every 5 seconds
             if now - last_light_time >= 5:

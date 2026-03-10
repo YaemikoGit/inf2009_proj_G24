@@ -41,6 +41,15 @@ def light():
         return {"status": "ok", "light": light_status}
     except Exception:
         return {"status": "error", "message": "Sensor Not Detected"}
+    
+# To get temperature
+@app.route('/temperature')
+def temperature():
+    try:
+        temp = get_temperature()
+        return {"status": "ok", "temperature": temp}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
 
 
 if __name__ == "__main__":

@@ -152,15 +152,14 @@
                 <p class="timestamp" id="light-time">{{ light.timestamp or 'Never' }}</p>
             </div>
 
-            <!-- Duplicate above card for each new sensor, e.g. Temperature -->
-            <!--
             <div class="card">
-                <h2>Temperature Sensor</h2>
-                <div class="value ok" id="temp-value">--</div>
+                <h2>Temperature & Humidity Sensor</h2>
+                <div class="value ok" id="temp-value">-- °C</div>
+                <div class="value ok" id="hum-value">-- %</div>
+                <!-- <div class="value ok" id="hum-value">--</div> -->
                 <span class="badge ok" id="temp-status">waiting</span>
                 <p class="timestamp" id="temp-time">Never</p>
             </div>
-            -->
 
         </div>
     </div>
@@ -174,6 +173,27 @@
             const time = document.getElementById("light-time");
 
             value.textContent = data.light || data.message || "Error";
+            value.className = "value " + (data.status === "ok" ? "ok" : "error");
+
+            status.textContent = data.status || "error";
+            status.className = "badge " + (data.status === "ok" ? "ok" : "error");
+
+            time.textContent = data.timestamp || "";
+        });
+        
+        socket.on("temperature_update", (data) => {
+            const value = document.getElementById("temp-value");
+            const humValue = document.getElementById("hum-value");
+            const status = document.getElementById("temp-status");
+            const time = document.getElementById("temp-time");
+
+            // value.textContent = data.temp ? data.temp + " °C" : data.message || "Error";
+            if (data.status === "ok") {
+                value.textContent = data.temperature + " °C";
+                humValue.textContent = data.humidity + " %";
+            } else {
+                value.textContent = data.message || "Error";
+            }
             value.className = "value " + (data.status === "ok" ? "ok" : "error");
 
             status.textContent = data.status || "error";
