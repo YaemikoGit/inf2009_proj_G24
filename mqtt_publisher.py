@@ -24,7 +24,7 @@ except ImportError:
 
 # MQTT Setup
 client = mqtt.Client("Publisher")
-client.connect("10.48.179.202", 1883)
+client.connect("192.168.137.42", 1883)
 
 TOPIC_TEMP = "sensors/temperature"
 TOPIC_LIGHT = "sensors/light"
