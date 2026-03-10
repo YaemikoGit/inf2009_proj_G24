@@ -10,7 +10,7 @@ from camera.headcount import detect_faces_dnn, net, camera, detect_faces_and_pos
 
 # MQTT Setup
 client = mqtt.Client("Publisher")
-client.connect("10.48.179.202", 1883)
+client.connect("192.168.137.42", 1883)
 
 TOPIC_LIGHT = "sensors/light"
 TOPIC_HEADCOUNT = "sensors/headcount"
