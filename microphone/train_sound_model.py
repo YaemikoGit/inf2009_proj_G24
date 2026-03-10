@@ -2,6 +2,7 @@ import pandas as pd
 from sklearn.model_selection import train_test_split
 from sklearn.tree import DecisionTreeClassifier
 from sklearn.metrics import classification_report
+import joblib
 
 # Load CSV
 df = pd.read_csv("noise_log.csv")
@@ -30,3 +31,7 @@ print(classification_report(y_test, y_pred))
 # Quick test
 new_sample = pd.DataFrame([[0.05, 0.5, 0.002, -23]], columns=['rms','peak','variance','dBFS'])
 print("Predicted:", clf.predict(new_sample)[0])
+                   
+# save the trained model
+joblib.dump(clf, "sound_model.pkl")
+print("Model saved as sound_model.pkl")
