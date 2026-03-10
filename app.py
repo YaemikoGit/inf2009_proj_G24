@@ -26,7 +26,7 @@ def index():
 @app.route('/video_feed')
 def video_feed():
     return Response(
-        generate_frames(latest_stats),
+        generate_frames(),
                     mimetype='multipart/x-mixed-replace; boundary=frame')
     
 @app.route('/stats')
