@@ -7,7 +7,6 @@ import base64
 import cv2
 from camera.headcount import detect_faces_and_pose, ssd_net, camera
 
-# Graceful sensor imports
 try:
     from sensors.light import get_light
     HAS_LIGHT = True
@@ -22,7 +21,6 @@ except ImportError:
     HAS_TEMP = False
     print("Temperature sensor not available - skipping")
 
-# MQTT Setup
 client = mqtt.Client("Publisher")
 client.connect("192.168.137.42", 1883)
 
@@ -34,7 +32,7 @@ def publish_temperature():
     if not HAS_TEMP:
         return None
     try:
-        data = get_temperature()  # returns {'temperature': temp, 'humidity': humidity}
+        data = get_temperature()
         payload = {
             "status": "ok",
             "temperature": data['temperature'],
@@ -66,10 +64,10 @@ def publish_headcount():
         print("Camera read failed")
         return
     
-    # Use your cleaner version with return_attention parameter
+    # Use return_attention=True to get attention data
     annotated_frame, attention = detect_faces_and_pose(frame, return_attention=True)
     
-    # Face detection for count
+    # Use ssd_net for face counting
     blob = cv2.dnn.blobFromImage(frame, 1.0, (300, 300), (104.0, 177.0, 123.0))
     ssd_net.setInput(blob)
     detections = ssd_net.forward()
