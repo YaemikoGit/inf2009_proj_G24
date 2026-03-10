@@ -15,23 +15,14 @@ yunet = cv2.FaceDetectorYN.create(yunet_model, "", (320, 320))
 
 camera = cv2.VideoCapture(0)
 
-# 3D model points for solvePnP
-model_points = np.array([
-    (0.0, 0.0, 0.0),      # nose tip
-    (0.0, -330.0, -65.0), # chin (approx)
-    (-225.0, 170.0, -135.0), # left eye
-    (225.0, 170.0, -135.0),  # right eye
-    (-150.0, -150.0, -125.0), # left mouth
-    (150.0, -150.0, -125.0)   # right mouth
-], dtype=np.float32)
-
 frame_counter = 0
 
-def detect_faces_and_pose(frame):
-
+def detect_faces_and_pose(frame, return_attention=False):  # <- added return_attention
     h, w = frame.shape[:2]
-    headcount = 0   # <-- MAKE SURE HEADCOUNT IS ALWAYS INITIALIZED
-
+    headcount = 0
+    attentive = 0   # <- added
+    distracted = 0  # <- added
+    
     try:
         # ---------- 1) SSD detection ----------
         blob = cv2.dnn.blobFromImage(frame, 1.0, (300, 300),
@@ -66,14 +57,10 @@ def detect_faces_and_pose(frame):
                 continue
 
             face_data = faces[0]
-
-            # slice 5 points (each 2 values: x,y)
             if len(face_data) < 15:
-                continue  # avoid bad outputs
+                continue
 
             landmarks = face_data[5:15].reshape((5, 2))
-
-            # scale back
             scale_x = face_w / 320
             scale_y = face_h / 320
 
@@ -84,10 +71,9 @@ def detect_faces_and_pose(frame):
                 image_points.append([x, y])
 
             image_points = np.array(image_points, dtype=np.float32)
-
             if image_points.shape != (5, 2):
                 continue
-
+                
             model_points = np.array([
                 (-30.0,  40.0,  30.0),
                 ( 30.0,  40.0,  30.0),
@@ -107,16 +93,13 @@ def detect_faces_and_pose(frame):
             dist_coeffs = np.zeros((4, 1))
 
             success, rot_vec, trans_vec = cv2.solvePnP(
-                model_points,
-                image_points,
-                camera_matrix,
-                dist_coeffs,
+                model_points, image_points, camera_matrix, dist_coeffs,
                 flags=cv2.SOLVEPNP_EPNP
             )
 
             if not success:
                 continue
-
+                
             rot_mat, _ = cv2.Rodrigues(rot_vec)
             pose_mat = cv2.hconcat((rot_mat, trans_vec))
             _, _, _, _, _, _, euler = cv2.decomposeProjectionMatrix(pose_mat)
@@ -125,20 +108,32 @@ def detect_faces_and_pose(frame):
             pitch = float(pitch)
             yaw = float(yaw)
 
-            cv2.putText(frame, f"Y:{yaw:.1f} P:{pitch:.1f}",
+            # Attention logic
+            is_attentive = abs(yaw) < 25 and abs(pitch) < 20
+            if is_attentive:
+                attentive += 1
+                label = "Attentive"
+                color = (0, 255, 0)   # green
+            else:
+                distracted += 1
+                label = "Distracted"
+                color = (0, 0, 255)   # red
+
+            cv2.putText(frame, f"{label} Y:{yaw:.1f} P:{pitch:.1f}",
                         (x1, y1 - 10),
                         cv2.FONT_HERSHEY_SIMPLEX,
-                        0.5, (255, 0, 0), 2)
+                        0.5, color, 2)
 
     except Exception as e:
         print("Pose Error:", e)
 
-    # ---------- ALWAYS DRAW HEADCOUNT (no crash) ----------
+    # Always draw headcount
     cv2.putText(frame, f"Headcount: {headcount}", (10, 30),
                 cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
 
-    return frame  # <-- ALWAYS RETURN FRAME
-
+    if return_attention:
+        return frame, {"attentive": attentive, "distracted": distracted}
+    return frame
 
 def generate_frames():
     while True:
@@ -147,7 +142,7 @@ def generate_frames():
             if not success:
                 break
 
-            frame = detect_faces_and_pose(frame)
+            frame = detect_faces_and_pose(frame)  # unchanged
 
             ret, buffer = cv2.imencode('.jpg', frame)
             frame = buffer.tobytes()
