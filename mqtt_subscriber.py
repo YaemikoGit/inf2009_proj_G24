@@ -50,7 +50,7 @@ def on_message(client, userdata, message):
 
 mqtt_client = mqtt.Client("Subscriber")
 mqtt_client.on_message = on_message
-mqtt_client.connect("192.168.137.42", 1883)
+mqtt_client.connect("10.48.179.202", 1883)
 mqtt_client.subscribe("sensors/light")
 mqtt_client.subscribe("sensors/headcount")  # subscribe to headcount too
 
