@@ -2,12 +2,12 @@ from flask import Flask, render_template, Response
 
 #Import other microphone modules as needed
 
-
 #Import other camera modules as needed
 from camera.headcount import generate_frames
 
 #Import other sensor modules as needed
 from sensors.temperature import get_temperature 
+from sensors.light import get_light
 
 latest_stats = {
     "headcount": 0,
@@ -32,6 +32,15 @@ def video_feed():
 @app.route('/stats')
 def stats():
     return latest_stats
+
+# To get light status 
+@app.route('/light')
+def light():
+    try:
+        light_status = get_light()
+        return {"status": "ok", "light": light_status}
+    except Exception:
+        return {"status": "error", "message": "Sensor Not Detected"}
 
 
 if __name__ == "__main__":
