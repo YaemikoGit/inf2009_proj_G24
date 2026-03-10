@@ -37,6 +37,7 @@ def on_message(client, userdata, message):
         print(f"Light update: {payload}")
         socketio.emit("light_update", payload)  # push to dashboard instantly
 
+    
     elif message.topic == "sensors/headcount":
         latest_headcount = payload
         print(f"Headcount update: count={payload.get('count')}")
