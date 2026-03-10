@@ -5,9 +5,22 @@ from datetime import datetime
 import json
 import base64
 import cv2
-from sensors.light import get_light
-from sensors.temperature import get_temperature
-from camera.headcount import detect_faces_dnn, net, camera, detect_faces_and_pose
+from camera.headcount import detect_faces_and_pose, ssd_net, camera
+
+# Graceful sensor imports
+try:
+    from sensors.light import get_light
+    HAS_LIGHT = True
+except ImportError:
+    HAS_LIGHT = False
+    print("Light sensor not available - skipping")
+
+try:
+    from sensors.temperature import get_temperature
+    HAS_TEMP = True
+except ImportError:
+    HAS_TEMP = False
+    print("Temperature sensor not available - skipping")
 
 # MQTT Setup
 client = mqtt.Client("Publisher")
@@ -17,9 +30,9 @@ TOPIC_TEMP = "sensors/temperature"
 TOPIC_LIGHT = "sensors/light"
 TOPIC_HEADCOUNT = "sensors/headcount"
 
-last_headcount = -1
-
 def publish_temperature():
+    if not HAS_TEMP:
+        return None
     try:
         data = get_temperature()  # returns {'temperature': temp, 'humidity': humidity}
         payload = {
@@ -27,105 +40,79 @@ def publish_temperature():
             "temperature": data['temperature'],
             "humidity": data['humidity']
         }
-    except Exception:
+    except Exception as e:
+        print(f"Temperature sensor error: {e}")
         payload = {"status": "error", "message": "Temperature sensor not detected"}
+    
     client.publish(TOPIC_TEMP, json.dumps(payload))
     return payload
 
 def publish_light_status():
+    if not HAS_LIGHT:
+        return None
     try:
         light_status = get_light()
         payload = {"status": "ok", "light": light_status}
-    except Exception:
-        payload = {"status": "error", "message": "Sensor Not Detected"}
+    except Exception as e:
+        print(f"Light sensor disconnected: {e}")
+        payload = {"status": "error", "message": "Sensor Disconnected"}
+    
     client.publish(TOPIC_LIGHT, json.dumps(payload))
     return payload
-
-# def publish_headcount():
-#     global last_headcount
-#     success, frame = camera.read()  # uses headcount.py's camera instance
-#     if not success:
-#         print("Camera read failed")
-#         return
-
-#     annotated_frame = detect_faces_dnn(frame)
-
-#     blob = cv2.dnn.blobFromImage(frame, 1.0, (300, 300), (104.0, 177.0, 123.0))
-#     net.setInput(blob)
-#     detections = net.forward()
-#     count = sum(1 for i in range(detections.shape[2]) if detections[0, 0, i, 2] >= 0.5)
-
-#     if count != last_headcount:
-#         last_headcount = count
-#         _, buffer = cv2.imencode('.jpg', annotated_frame)
-#         image_base64 = base64.b64encode(buffer).decode('utf-8')
-#         payload = {"count": count, "image": image_base64}
-#         client.publish(TOPIC_HEADCOUNT, json.dumps(payload))
-#         print(f"Headcount changed: {count} - published with image")
-#     else:
-#         print(f"Headcount unchanged: {count} - skipped")
-
-
-TOPIC_HEADCOUNT = "sensors/headcount"
 
 def publish_headcount():
     success, frame = camera.read()
     if not success:
-        print("Camera error")
+        print("Camera read failed")
         return
-
-    headcount, results = detect_faces_and_pose(frame)
-
-    attentive = 0
-    distracted = 0
-
-    for r in results:
-        yaw = r["yaw"]
-        pitch = r["pitch"]
-
-        if abs(yaw) < 25 and abs(pitch) < 20:
-            attentive += 1
-        else:
-            distracted += 1
-
-    # Take a snapshot ONLY when sending
-    _, buffer = cv2.imencode('.jpg', frame)
-    snapshot = base64.b64encode(buffer).decode("utf-8")
-
+    
+    # Use your cleaner version with return_attention parameter
+    annotated_frame, attention = detect_faces_and_pose(frame, return_attention=True)
+    
+    # Face detection for count
+    blob = cv2.dnn.blobFromImage(frame, 1.0, (300, 300), (104.0, 177.0, 123.0))
+    ssd_net.setInput(blob)
+    detections = ssd_net.forward()
+    count = sum(1 for i in range(detections.shape[2]) if detections[0, 0, i, 2] >= 0.5)
+    
+    # Encode image
+    _, buffer = cv2.imencode('.jpg', annotated_frame)
+    image_base64 = base64.b64encode(buffer).decode('utf-8')
+    
     payload = {
-        "count": headcount,
-        "attentive": attentive,
-        "distracted": distracted,
-        "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-        "snapshot": snapshot
+        "count": count,
+        "image": image_base64,
+        "attentive": attention["attentive"],
+        "distracted": attention["distracted"],
+        "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     }
-
+    
     client.publish(TOPIC_HEADCOUNT, json.dumps(payload))
-    print("MQTT sent:", payload)
-
+    print(f"Headcount: {count} | Attentive: {attention['attentive']} Distracted: {attention['distracted']}")
 
 if __name__ == "__main__":
     last_temp_time = 0
     last_light_time = 0
+    
     try:
         while True:
             now = time.time()
-
-            # Temp every 5 seconds (can be same or different interval)
-            if now - last_temp_time >= 5:
+            
+            # Temperature every 5 seconds
+            if HAS_TEMP and now - last_temp_time >= 5:
                 temp_result = publish_temperature()
                 print(f"Temperature: {temp_result}")
                 last_temp_time = now
-
+            
             # Light every 5 seconds
-            if now - last_light_time >= 5:
+            if HAS_LIGHT and now - last_light_time >= 5:
                 light_result = publish_light_status()
                 print(f"Light: {light_result}")
                 last_light_time = now
-
+            
             # Headcount every 1 second
             publish_headcount()
-
             time.sleep(1)
+            
     finally:
         camera.release()

@@ -26,7 +26,6 @@
             margin: 0 auto;
         }
 
-        /* LEFT — Camera Feed */
         .camera-panel {
             flex: 2;
             background: white;
@@ -62,7 +61,6 @@
             font-size: 1em;
         }
 
-        /* RIGHT — Sensor Cards */
         .sensor-panel {
             flex: 1;
             display: flex;
@@ -95,7 +93,18 @@
         .value.ok { color: #22c55e; }
         .value.error { color: #ef4444; }
 
-        /* Status badge inside card */
+        .attention-row {
+            display: flex;
+            justify-content: space-around;
+            margin-top: 8px;
+        }
+
+        .attention-row .label {
+            font-size: 0.78em;
+            color: #888;
+            margin-top: 4px;
+        }
+
         .badge {
             display: inline-block;
             margin-top: 8px;
@@ -116,19 +125,18 @@
         }
     </style>
 </head>
-
 <body>
-    <h1>Classroom Analytics</h1>
+    <h1>🏫 Classroom Analytics</h1>
 
     <div class="dashboard">
 
         <!-- LEFT: Camera Snapshot -->
         <div class="camera-panel">
-            <h2>Latest Snapshot</h2>
+            <h2>📷 Latest Snapshot</h2>
             {% if headcount.image %}
                 <img id="snapshot" src="data:image/jpeg;base64,{{ headcount.image }}" alt="Classroom snapshot">
             {% else %}
-                <div class="no-image" id="no-image-placeholder">Waiting for snapshot...</div>
+                <div class="no-image" id="no-image-placeholder">⏳ Waiting for snapshot...</div>
                 <img id="snapshot" src="" alt="Classroom snapshot" style="display:none;">
             {% endif %}
             <p class="timestamp" id="snapshot-time">
@@ -139,24 +147,40 @@
         <!-- RIGHT: Sensor Cards -->
         <div class="sensor-panel">
 
-            <!-- Light Sensor Card (duplicate this for other sensors) -->
+            <!-- Attention Card -->
             <div class="card">
-                <h2>Light Sensor</h2>
+                <h2>🧠 Attention</h2>
+                <div class="attention-row">
+                    <div>
+                        <div class="value ok" id="attentive-value">{{ headcount.attentive or 0 }}</div>
+                        <p class="label">Attentive</p>
+                    </div>
+                    <div>
+                        <div class="value error" id="distracted-value">{{ headcount.distracted or 0 }}</div>
+                        <p class="label">Distracted</p>
+                    </div>
+                </div>
+                <p class="timestamp" id="attention-time">{{ headcount.timestamp or 'Never' }}</p>
+            </div>
+
+            <!-- Light Sensor Card -->
+            <div class="card">
+                <h2>💡 Light Sensor</h2>
                 {% if light.status == 'ok' %}
                     <div class="value ok" id="light-value">{{ light.light }}</div>
                     <span class="badge ok" id="sensor-status">{{ light.status }}</span>
                 {% else %}
-                    <div class="value error" id="light-value">{{ light.message or 'Sensor error' }}</div>
+                    <div class="value error" id="light-value">Sensor Not Detected</div>
                     <span class="badge error" id="sensor-status">{{ light.status or 'error' }}</span>
                 {% endif %}
                 <p class="timestamp" id="light-time">{{ light.timestamp or 'Never' }}</p>
             </div>
 
+            <!-- Temperature & Humidity Card -->
             <div class="card">
-                <h2>Temperature & Humidity Sensor</h2>
+                <h2>🌡️ Temperature & Humidity</h2>
                 <div class="value ok" id="temp-value">-- °C</div>
                 <div class="value ok" id="hum-value">-- %</div>
-                <!-- <div class="value ok" id="hum-value">--</div> -->
                 <span class="badge ok" id="temp-status">waiting</span>
                 <p class="timestamp" id="temp-time">Never</p>
             </div>
@@ -170,39 +194,44 @@
         socket.on("light_update", (data) => {
             const value = document.getElementById("light-value");
             const status = document.getElementById("sensor-status");
-            const time = document.getElementById("light-time");
-
-            value.textContent = data.light || data.message || "Error";
+            
+            if (data.status === "ok") {
+                value.textContent = data.light;
+            } else {
+                value.textContent = "Sensor Not Detected";
+            }
+            
             value.className = "value " + (data.status === "ok" ? "ok" : "error");
-
             status.textContent = data.status || "error";
             status.className = "badge " + (data.status === "ok" ? "ok" : "error");
-
-            time.textContent = data.timestamp || "";
+            document.getElementById("light-time").textContent = data.timestamp || "";
         });
-        
+
         socket.on("temperature_update", (data) => {
             const value = document.getElementById("temp-value");
             const humValue = document.getElementById("hum-value");
             const status = document.getElementById("temp-status");
             const time = document.getElementById("temp-time");
 
-            // value.textContent = data.temp ? data.temp + " °C" : data.message || "Error";
             if (data.status === "ok") {
                 value.textContent = data.temperature + " °C";
                 humValue.textContent = data.humidity + " %";
+                value.className = "value ok";
             } else {
                 value.textContent = data.message || "Error";
+                value.className = "value error";
             }
-            value.className = "value " + (data.status === "ok" ? "ok" : "error");
 
             status.textContent = data.status || "error";
             status.className = "badge " + (data.status === "ok" ? "ok" : "error");
-
             time.textContent = data.timestamp || "";
         });
 
         socket.on("headcount_update", (data) => {
+            document.getElementById("attentive-value").textContent = data.attentive ?? 0;
+            document.getElementById("distracted-value").textContent = data.distracted ?? 0;
+            document.getElementById("attention-time").textContent = data.timestamp || "";
+
             if (data.image) {
                 const img = document.getElementById("snapshot");
                 const placeholder = document.getElementById("no-image-placeholder");
