@@ -17,8 +17,8 @@ yunet = cv2.FaceDetectorYN.create(yunet_model, "", (320, 320))
 # Create Facemark LBF
 facemark = cv2.face.createFacemarkLBF()
 # Load the model
-model_path = os.path.join(BASE_DIR, "models", "lbfmodel.yaml")
-facemark.loadModel(model_path)
+LBF_path = os.path.join(BASE_DIR, "models", "lbfmodel.yaml")
+facemark.loadModel(LBF_path)
 
 camera = cv2.VideoCapture(0)
 
