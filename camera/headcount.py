@@ -203,9 +203,6 @@ def detect_faces_and_pose(frame, return_attention=False):
                 for i, landmarks in enumerate(landmarks_all):
                     points = landmarks[0] # The 68 points
                     
-                    for (px, py) in image_points:
-                        cv2.circle(frame, (int(px), int(py)), 3, (255, 0, 255), -1)
-                    
                     # Selection of points for SolvePnP (Nose, Chin, Eyes, Mouth corners)
                     # Indices based on the 68-point map
                     image_points = np.array([
@@ -216,6 +213,9 @@ def detect_faces_and_pose(frame, return_attention=False):
                         points[48],     # Left Mouth corner
                         points[54]      # Right mouth corner
                     ], dtype="double")
+                    
+                    for (px, py) in image_points:
+                        cv2.circle(frame, (int(px), int(py)), 3, (255, 0, 255), -1)
 
                     # Standard 3D model points (generic human face)
                     model_points = np.array([
