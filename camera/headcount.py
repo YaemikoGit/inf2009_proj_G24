@@ -259,20 +259,15 @@ def detect_faces_and_pose(frame, return_attention=False):
                         pitch, yaw, roll = euler.flatten()
 
                         # --- Attention Logic ---
-                        # 1. Define your "Center" (What the camera sees when you are looking at it)
                         center_yaw = -15
-                        center_pitch = 100
+                        normalized_pitch = abs(pitch) % 180
 
-                        # 2. Calculate the difference (how far you have moved from center)
                         diff_yaw = yaw - center_yaw
-                        diff_pitch = pitch - center_pitch
-
-                        # 3. Use the Absolute Difference for the threshold
-                        # Yaw threshold 25: allows 25 degrees left or right from -15
-                        # Pitch threshold 30: allows 30 degrees up or down from 100
+                        diff_pitch = pitch - normalized_pitch - 95
                         
                         print(f"Debug: Yaw={yaw:.2f}, Pitch={pitch:.2f}, Success={success_pnp}")
-                        if abs(diff_yaw) < 25 and abs(diff_pitch) < 30:
+                        
+                        if abs(diff_yaw) < 30 and abs(diff_pitch) < 45:
                             attentive += 1
                             label, color = "Attentive", (0, 255, 0)
                         else:
