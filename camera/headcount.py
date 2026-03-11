@@ -275,19 +275,49 @@ def detect_faces_and_pose(frame, return_attention=False):
                         smoothed_pitch = get_smoothed_pitch(pitch)
 
                         # --- Attention Logic ---
-                        center_yaw = -15
-                        normalized_pitch = abs(pitch) % 180
+                        # center_yaw = -15
+                        # normalized_pitch = abs(pitch) % 180
                         
-                        s_pitch = get_smoothed_pitch(pitch)
+                        # s_pitch = get_smoothed_pitch(pitch)
+                        # s_yaw = get_smoothed_yaw(yaw)
+                        # #diff_yaw = s_yaw - (-84) 
+                        # #diff_pitch = s_pitch - 84
+                        # anchor_yaw = -84
+                        # anchor_pitch = 84
+
+                        # diff_yaw = abs(s_yaw - anchor_yaw)
+                        # diff_pitch = abs(s_pitch - anchor_pitch)
+                        
+                        
+                        # print(f"Debug: Yaw={diff_yaw:.2f}, Pitch={diff_pitch:.2f}, Success={success_pnp}")
+                        # is_attentive = diff_yaw < 45 and diff_pitch < 45
+                        # if is_attentive:
+                            # attentive += 1
+                            # label, color = "Attentive", (0, 255, 0)
+                        # else:
+                            # distracted += 1
+                            # label, color = "Distracted", (0, 0, 255)
+                            
+                        center_yaw = 16.0
+                        center_pitch = 12.0 
+
+                        # Expand the thresholds to be more forgiving
+                        yaw_threshold = 80.0   # Allows Yaw to be anywhere from -24 to 56
+                        pitch_threshold = 80.0 # Allows Pitch to be anywhere from -28 to 52
+
+                        # Use smoothed values
                         s_yaw = get_smoothed_yaw(yaw)
-                        diff_yaw = s_yaw - (-84) 
-                        diff_pitch = s_pitch - 84
+                        s_pitch = get_smoothed_pitch(pitch)
+
+                        # Calculate difference
+                        diff_yaw = abs(s_yaw - center_yaw)
+                        diff_pitch = abs(s_pitch - center_pitch)
                         
-                        
-                        
-                        print(f"Debug: Yaw={yaw:.2f}, Pitch={pitch:.2f}, Success={success_pnp}")
-                        
-                        if abs(diff_yaw) < 30 and abs(diff_pitch) < 30:
+                        print(f"Debug: Yaw={diff_yaw:.2f}, Pitch={diff_pitch:.2f}, Success={success_pnp}")
+                        # Determine state
+                        is_attentive = diff_yaw < yaw_threshold and diff_pitch < pitch_threshold
+
+                        if is_attentive:
                             attentive += 1
                             label, color = "Attentive", (0, 255, 0)
                         else:
