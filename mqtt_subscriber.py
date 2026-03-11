@@ -13,7 +13,7 @@ socketio = SocketIO(app, cors_allowed_origins="*")
 latest_temp = {"status": "waiting", "temperature": "No data yet", "humidity": "No data yet", "timestamp": None}
 latest_light = {"status": "waiting", "light": "No data yet", "timestamp": None}
 latest_headcount = {"count": 0, "image": None, "attentive": 0, "distracted": 0, "timestamp": None}
-latest_sound = {"status": "waiting", "label": "No data yet", "timestamp": None}
+latest_sound = {"status": "waiting", "rms": None, "peak": None, "variance": None, "dBFS": None, "label": None, "timestamp": None}
 
 # --- MQTT Setup ---
 def on_message(client, userdata, message):
@@ -91,7 +91,8 @@ mqtt_thread.start()
 def index():
     return render_template('index.html',
                            light=latest_light,
-                           headcount=latest_headcount)
+                           headcount=latest_headcount,
+                           sound=latest_sound)
 
 @app.route('/data/temperature')
 def data_temperature():
