@@ -196,6 +196,7 @@ def detect_faces_and_pose(frame, return_attention=False):
         if headcount > 0:
             # 1. Convert face_boxes to the format Facemark expects (a list of rectangles)
             # Ensure face_boxes are [x, y, w, h]
+            padding = 20
             formatted_boxes = []
             for box in face_boxes:
                 x1, y1, x2, y2 = box
@@ -257,22 +258,17 @@ def detect_faces_and_pose(frame, return_attention=False):
                         pitch, yaw, roll = euler.flatten()
 
                         # --- Attention Logic ---
-                        # 1. Define your "Center" (What the camera sees when you are looking at it)
-                        center_yaw = -15
-                        center_pitch = 100
+                        corrected_pitch = 180 - abs(pitch) 
+                        corrected_yaw = yaw + 23 # Centering your -23 to 0
 
-                        # 2. Calculate the difference (how far you have moved from center)
-                        diff_yaw = yaw - center_yaw
-                        diff_pitch = pitch - center_pitch
+                        # 2. Updated Attention Logic
+                        # Now we can use small, clean numbers
+                        is_facing_forward = abs(corrected_yaw) < 20 
+                        is_looking_at_screen = abs(corrected_pitch) < 25 
 
-                        # 3. Use the Absolute Difference for the threshold
-                        # Yaw threshold 25: allows 25 degrees left or right from -15
-                        # Pitch threshold 30: allows 30 degrees up or down from 100
-                        if abs(diff_yaw) < 25 and abs(diff_pitch) < 30:
-                            attentive += 1
+                        if is_facing_forward and is_looking_at_screen:
                             label, color = "Attentive", (0, 255, 0)
                         else:
-                            distracted += 1
                             label, color = "Distracted", (0, 0, 255)
                             
 
