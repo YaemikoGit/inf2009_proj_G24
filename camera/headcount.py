@@ -172,6 +172,19 @@ frame_counter = 0
 #         return frame, {"attentive": attentive, "distracted": distracted}
 #     return frame
 
+pitch_history = []
+yaw_history = []
+
+def get_smoothed_pitch(new_val):
+    pitch_history.append(new_val)
+    if len(pitch_history) > 10: pitch_history.pop(0)
+    return sum(pitch_history) / len(pitch_history)
+
+def get_smoothed_yaw(new_val):
+    yaw_history.append(new_val)
+    if len(yaw_history) > 10: yaw_history.pop(0)
+    return sum(yaw_history) / len(yaw_history)
+
 def detect_faces_and_pose(frame, return_attention=False):
     h, w = frame.shape[:2]
     headcount = 0
@@ -215,8 +228,8 @@ def detect_faces_and_pose(frame, return_attention=False):
                     image_points = np.array([
                         points[30], # Nose tip
                         points[33], # Nose base (More stable than chin)
-                        points[39], # Left Eye inner
-                        points[42], # Right Eye inner
+                        points[36], # Left Eye inner
+                        points[45], # Right Eye inner
                         points[48], # Left Mouth corner
                         points[54]  # Right Mouth corner
                     ], dtype="double")
@@ -256,18 +269,25 @@ def detect_faces_and_pose(frame, return_attention=False):
                         pmat = cv2.hconcat((rmat, trans_vec))
                         _, _, _, _, _, _, euler = cv2.decomposeProjectionMatrix(pmat)
                         
+                        
                         pitch, yaw, roll = euler.flatten()
+                        
+                        smoothed_pitch = get_smoothed_pitch(pitch)
 
                         # --- Attention Logic ---
                         center_yaw = -15
                         normalized_pitch = abs(pitch) % 180
-
-                        diff_yaw = yaw - center_yaw
-                        diff_pitch = pitch - normalized_pitch - 95
+                        
+                        s_pitch = get_smoothed_pitch(pitch)
+                        s_yaw = get_smoothed_yaw(yaw)
+                        diff_yaw = s_yaw - (-84) 
+                        diff_pitch = s_pitch - 84
+                        
+                        
                         
                         print(f"Debug: Yaw={yaw:.2f}, Pitch={pitch:.2f}, Success={success_pnp}")
                         
-                        if abs(diff_yaw) < 30 and abs(diff_pitch) < 45:
+                        if abs(diff_yaw) < 30 and abs(diff_pitch) < 30:
                             attentive += 1
                             label, color = "Attentive", (0, 255, 0)
                         else:
