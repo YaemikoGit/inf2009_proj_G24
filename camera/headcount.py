@@ -249,10 +249,11 @@ def detect_faces_and_pose(frame, return_attention=False):
 
                         # --- Attention Logic ---
                         # Tightened for better accuracy
-                        is_facing_forward = abs(yaw) < 20 
-                        is_looking_at_screen = -35 < pitch < 15 
+                        is_facing_forward = abs(yaw) < 30 
+                        is_looking_at_screen = -50 < pitch < 25 
 
-                        if is_facing_forward and is_looking_at_screen:
+                        is_attentive = is_facing_forward and is_looking_at_screen
+                        if is_attentive:
                             attentive += 1
                             label, color = "Attentive", (0, 255, 0)
                         else:
