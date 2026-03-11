@@ -9,6 +9,12 @@ from camera.headcount import generate_frames
 from sensors.temperature import get_temperature 
 from sensors.light import get_light
 
+latest_stats = {
+    "headcount": 0,
+    "attentive": 0,
+    "distracted": 0
+}
+
 app = Flask(__name__)
 
 
@@ -19,8 +25,13 @@ def index():
 
 @app.route('/video_feed')
 def video_feed():
-    return Response(generate_frames(),
+    return Response(
+        generate_frames(),
                     mimetype='multipart/x-mixed-replace; boundary=frame')
+    
+@app.route('/stats')
+def stats():
+    return latest_stats
 
 # To get light status 
 @app.route('/light')
@@ -30,6 +41,15 @@ def light():
         return {"status": "ok", "light": light_status}
     except Exception:
         return {"status": "error", "message": "Sensor Not Detected"}
+    
+# To get temperature
+@app.route('/temperature')
+def temperature():
+    try:
+        temp = get_temperature()
+        return {"status": "ok", "temperature": temp}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
 
 
 if __name__ == "__main__":

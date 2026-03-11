@@ -10,13 +10,14 @@ app = Flask(__name__)
 socketio = SocketIO(app, cors_allowed_origins="*")
 
 # Store latest data separately
+latest_temp = {"status": "waiting", "temperature": "No data yet", "humidity": "No data yet", "timestamp": None}
 latest_light = {"status": "waiting", "light": "No data yet", "timestamp": None}
-latest_headcount = {"count": 0, "image": None, "timestamp": None}
+latest_headcount = {"count": 0, "image": None, "attentive": 0, "distracted": 0, "timestamp": None}
 
 # --- MQTT Setup ---
 def on_message(client, userdata, message):
-    global latest_light, latest_headcount
-
+    global latest_temp, latest_light, latest_headcount
+    
     try:
         raw = message.payload.decode()
         try:
@@ -26,32 +27,48 @@ def on_message(client, userdata, message):
     except Exception as e:
         print(f"Failed to parse message: {str(e)}")
         return
-
+    
     payload["timestamp"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
-    # Route to correct data store based on topic
+    
+    
+    ############ for light ################
     if message.topic == "sensors/light":
         if "light" in payload and isinstance(payload["light"], bool):
             payload["light"] = "On" if payload["light"] else "Off"
         latest_light = payload
         print(f"Light update: {payload}")
-        socketio.emit("light_update", payload)  # push to dashboard instantly
-
+        socketio.emit("light_update", payload)
+    
+    
+    ############ for temperature ################
+    elif message.topic == "sensors/temperature":
+        try:
+            latest_temp = payload
+            latest_temp["timestamp"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            print(f"Temperature update: {latest_temp}")
+            socketio.emit("temperature_update", latest_temp)
+        except Exception as e:
+            print(f"Failed to handle temperature message: {e}")
+    
+    
+    ############ for camera ################
     elif message.topic == "sensors/headcount":
         latest_headcount = payload
-        print(f"Headcount update: count={payload.get('count')}")
-        # Emit without image for the count update
+        print(f"Headcount: {payload.get('count')} | Attentive: {payload.get('attentive', 0)} Distracted: {payload.get('distracted', 0)}")
         socketio.emit("headcount_update", {
             "count": payload.get("count"),
             "timestamp": payload.get("timestamp"),
-            "image": payload.get("image")  # base64 image
+            "image": payload.get("image"),
+            "attentive": payload.get("attentive", 0),
+            "distracted": payload.get("distracted", 0)
         })
 
 mqtt_client = mqtt.Client("Subscriber")
 mqtt_client.on_message = on_message
-mqtt_client.connect("10.48.179.202", 1883)
+mqtt_client.connect("192.168.137.42", 1883)
+mqtt_client.subscribe("sensors/temperature")
 mqtt_client.subscribe("sensors/light")
-mqtt_client.subscribe("sensors/headcount")  # subscribe to headcount too
+mqtt_client.subscribe("sensors/headcount")
 
 # Run MQTT loop in background thread
 mqtt_thread = threading.Thread(target=mqtt_client.loop_forever, daemon=True)
@@ -64,15 +81,20 @@ def index():
                            light=latest_light,
                            headcount=latest_headcount)
 
+@app.route('/data/temperature')
+def data_temperature():
+    return jsonify(latest_temp)
+    
 @app.route('/data/light')
 def data_light():
     return jsonify(latest_light)
 
 @app.route('/data/headcount')
 def data_headcount():
-    # Return headcount without image for lightweight polling
     return jsonify({
         "count": latest_headcount.get("count"),
+        "attentive": latest_headcount.get("attentive", 0),
+        "distracted": latest_headcount.get("distracted", 0),
         "timestamp": latest_headcount.get("timestamp")
     })
 
