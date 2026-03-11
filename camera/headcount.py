@@ -194,17 +194,22 @@ def detect_faces_and_pose(frame, return_attention=False):
         headcount = len(face_boxes)
 
         if headcount > 0:
-            # ---------- Step 2: Get 68 Landmarks ----------
-            # facemark.fit requires a list of rectangles
-            rects = [tuple(box) for box in face_boxes]
-            success, landmarks_all = facemark.fit(frame, np.array(face_boxes))
+            # 1. Convert face_boxes to the format Facemark expects (a list of rectangles)
+            # Ensure face_boxes are [x, y, w, h]
+            formatted_boxes = []
+            for box in face_boxes:
+                x1, y1, x2, y2 = box
+                formatted_boxes.append((x1, y1, x2 - x1, y2 - y1))
+
+            # 2. Fit landmarks using the FULL frame and the boxes
+            success, landmarks_all = facemark.fit(frame, np.array(formatted_boxes))
 
             if success:
                 for i, landmarks in enumerate(landmarks_all):
-                    points = landmarks[0] # The 68 points
-                    
-                    # Selection of points for SolvePnP (Nose, Chin, Eyes, Mouth corners)
-                    # Indices based on the 68-point map
+                    # landmarks[0] contains the 68 points for the i-th face
+                    points = landmarks[0] 
+
+                    # 3. Map the 6 points for SolvePnP
                     image_points = np.array([
                         points[30],     # Nose tip
                         points[8],      # Chin
@@ -213,7 +218,8 @@ def detect_faces_and_pose(frame, return_attention=False):
                         points[48],     # Left Mouth corner
                         points[54]      # Right mouth corner
                     ], dtype="double")
-                    
+
+                    # --- DEBUG: Draw the points to verify they are ON the face ---
                     for (px, py) in image_points:
                         cv2.circle(frame, (int(px), int(py)), 3, (255, 0, 255), -1)
 
