@@ -249,8 +249,15 @@ def detect_faces_and_pose(frame, return_attention=False):
 
                         # --- Attention Logic ---
                         # Tightened for better accuracy
-                        is_facing_forward = abs(yaw) < 30 
-                        is_looking_at_screen = -50 < pitch < 25 
+                        # is_facing_forward = abs(yaw) < 30 
+                        # is_looking_at_screen = -50 < pitch < 25 
+                        # 1. Normalize the values based on your "facing camera" readings
+                        norm_yaw = yaw + 15   # If raw is -15, this becomes 0
+                        norm_pitch = pitch - 100 # If raw is 100, this becomes 0
+
+                        # 2. Now use standard thresholds on the normalized values
+                        is_facing_forward = abs(norm_yaw) < 25 
+                        is_looking_at_screen = abs(norm_pitch) < 30
 
                         is_attentive = is_facing_forward and is_looking_at_screen
                         if is_attentive:
