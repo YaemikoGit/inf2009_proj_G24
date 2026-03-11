@@ -1,10 +1,15 @@
 <!DOCTYPE html>
 <html>
+
 <head>
     <title>Classroom Analytics</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.6.1/socket.io.min.js"></script>
     <style>
-        * { box-sizing: border-box; margin: 0; padding: 0; }
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
 
         body {
             font-family: Arial, sans-serif;
@@ -30,7 +35,7 @@
             flex: 2;
             background: white;
             border-radius: 12px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
             padding: 20px;
         }
 
@@ -71,7 +76,7 @@
         .card {
             background: white;
             border-radius: 12px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
             padding: 24px;
             text-align: center;
         }
@@ -90,8 +95,13 @@
             color: #333;
         }
 
-        .value.ok { color: #22c55e; }
-        .value.error { color: #ef4444; }
+        .value.ok {
+            color: #22c55e;
+        }
+
+        .value.error {
+            color: #ef4444;
+        }
 
         .attention-row {
             display: flex;
@@ -115,8 +125,15 @@
             text-transform: uppercase;
         }
 
-        .badge.ok { background: #dcfce7; color: #16a34a; }
-        .badge.error { background: #fee2e2; color: #dc2626; }
+        .badge.ok {
+            background: #dcfce7;
+            color: #16a34a;
+        }
+
+        .badge.error {
+            background: #fee2e2;
+            color: #dc2626;
+        }
 
         .timestamp {
             color: #aaa;
@@ -125,6 +142,7 @@
         }
     </style>
 </head>
+
 <body>
     <h1>🏫 Classroom Analytics</h1>
 
@@ -134,10 +152,10 @@
         <div class="camera-panel">
             <h2>📷 Latest Snapshot</h2>
             {% if headcount.image %}
-                <img id="snapshot" src="data:image/jpeg;base64,{{ headcount.image }}" alt="Classroom snapshot">
+            <img id="snapshot" src="data:image/jpeg;base64,{{ headcount.image }}" alt="Classroom snapshot">
             {% else %}
-                <div class="no-image" id="no-image-placeholder">⏳ Waiting for snapshot...</div>
-                <img id="snapshot" src="" alt="Classroom snapshot" style="display:none;">
+            <div class="no-image" id="no-image-placeholder">⏳ Waiting for snapshot...</div>
+            <img id="snapshot" src="" alt="Classroom snapshot" style="display:none;">
             {% endif %}
             <p class="timestamp" id="snapshot-time">
                 Last snapshot: {{ headcount.timestamp or 'Never' }}
@@ -167,11 +185,11 @@
             <div class="card">
                 <h2>💡 Light Sensor</h2>
                 {% if light.status == 'ok' %}
-                    <div class="value ok" id="light-value">{{ light.light }}</div>
-                    <span class="badge ok" id="sensor-status">{{ light.status }}</span>
+                <div class="value ok" id="light-value">{{ light.light }}</div>
+                <span class="badge ok" id="sensor-status">{{ light.status }}</span>
                 {% else %}
-                    <div class="value error" id="light-value">Sensor Not Detected</div>
-                    <span class="badge error" id="sensor-status">{{ light.status or 'error' }}</span>
+                <div class="value error" id="light-value">Sensor Not Detected</div>
+                <span class="badge error" id="sensor-status">{{ light.status or 'error' }}</span>
                 {% endif %}
                 <p class="timestamp" id="light-time">{{ light.timestamp or 'Never' }}</p>
             </div>
@@ -185,17 +203,17 @@
                 <p class="timestamp" id="temp-time">Never</p>
             </div>
 
-             <!-- Sound Card -->
+            <!-- Sound Card -->
             <div class="card">
                 <h2>🔊 Noise Level</h2>
-                {% if light.status == 'ok' %}
-                    <div class="value ok" id="light-value">{{ light.light }}</div>
-                    <span class="badge ok" id="sensor-status">{{ light.status }}</span>
+                {% if sound.status == 'ok' %}
+                <div class="value ok" id="sound-value">{{ sound.label or 'Detected' }}</div>
+                <span class="badge ok" id="sound-status">{{ sound.status }}</span>
                 {% else %}
-                    <div class="value error" id="light-value">Sensor Not Detected</div>
-                    <span class="badge error" id="sensor-status">{{ sound.status or 'error' }}</span>
+                <div class="value error" id="sound-value">Sensor Not Detected</div>
+                <span class="badge error" id="sound-status">{{ sound.status or 'error' }}</span>
                 {% endif %}
-                <p class="timestamp" id="light-time">{{ sound.timestamp or 'Never' }}</p>
+                <p class="timestamp" id="sound-time">{{ sound.timestamp or 'Never' }}</p>
             </div>
 
         </div>
@@ -207,13 +225,13 @@
         socket.on("light_update", (data) => {
             const value = document.getElementById("light-value");
             const status = document.getElementById("sensor-status");
-            
+
             if (data.status === "ok") {
                 value.textContent = data.light;
             } else {
                 value.textContent = "Sensor Not Detected";
             }
-            
+
             value.className = "value " + (data.status === "ok" ? "ok" : "error");
             status.textContent = data.status || "error";
             status.className = "badge " + (data.status === "ok" ? "ok" : "error");
@@ -254,6 +272,24 @@
                 document.getElementById("snapshot-time").textContent = "Last snapshot: " + data.timestamp;
             }
         });
+
+        socket.on("sound_update", (data) => {
+            const value = document.getElementById("sound-value");
+            const status = document.getElementById("sound-status");
+            const time = document.getElementById("sound-time");
+
+            if (data.status === "ok") {
+                value.textContent = data.label || "Detected";
+            } else {
+                value.textContent = "Sensor Not Detected";
+            }
+
+            value.className = "value " + (data.status === "ok" ? "ok" : "error");
+            status.textContent = data.status || "error";
+            status.className = "badge " + (data.status === "ok" ? "ok" : "error");
+            time.textContent = data.timestamp || "";
+        });
     </script>
 </body>
+
 </html>
