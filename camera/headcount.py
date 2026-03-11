@@ -196,6 +196,7 @@ def detect_faces_and_pose(frame, return_attention=False):
         if headcount > 0:
             # 1. Convert face_boxes to the format Facemark expects (a list of rectangles)
             # Ensure face_boxes are [x, y, w, h]
+            padding = 20
             formatted_boxes = []
             for box in face_boxes:
                 x1, y1, x2, y2 = box
@@ -210,28 +211,29 @@ def detect_faces_and_pose(frame, return_attention=False):
                     points = landmarks[0] 
 
                     # 3. Map the 6 points for SolvePnP
+                    
                     image_points = np.array([
-                        points[30],     # Nose tip
-                        points[8],      # Chin
-                        points[36],     # Left eye left corner
-                        points[45],     # Right eye right corner
-                        points[48],     # Left Mouth corner
-                        points[54]      # Right mouth corner
+                        points[30], # Nose tip
+                        points[33], # Nose base (More stable than chin)
+                        points[39], # Left Eye inner
+                        points[42], # Right Eye inner
+                        points[48], # Left Mouth corner
+                        points[54]  # Right Mouth corner
                     ], dtype="double")
 
                     # --- DEBUG: Draw the points to verify they are ON the face ---
                     for (px, py) in image_points:
                         cv2.circle(frame, (int(px), int(py)), 3, (255, 0, 255), -1)
 
-                    # Standard 3D model points (generic human face)
+
                     model_points = np.array([
-                        (0.0, 0.0, 0.0),             # Nose tip
-                        (0.0, -330.0, -65.0),        # Chin
-                        (-225.0, 170.0, -135.0),     # Left eye left corner
-                        (225.0, 170.0, -135.0),      # Right eye right corner
-                        (-150.0, -150.0, -125.0),    # Left Mouth corner
-                        (150.0, -150.0, -125.0)      # Right mouth corner
-                    ])
+                        (0.0, 0.0, 0.0),           # Nose tip
+                        (0.0, -50.0, 20.0),        # Nose base
+                        (-30.0, 40.0, 10.0),       # Left Eye inner
+                        (30.0, 40.0, 10.0),        # Right Eye inner
+                        (-40.0, -60.0, 10.0),      # Left Mouth corner
+                        (40.0, -60.0, 10.0)        # Right Mouth corner
+                    ], dtype="double")
 
                     # Camera internals
                     focal_length = w
@@ -257,17 +259,24 @@ def detect_faces_and_pose(frame, return_attention=False):
                         pitch, yaw, roll = euler.flatten()
 
                         # --- Attention Logic ---
-                        corrected_pitch = 180 - abs(pitch) 
-                        corrected_yaw = yaw + 23 # Centering your -23 to 0
+                        # 1. Define your "Center" (What the camera sees when you are looking at it)
+                        center_yaw = -15
+                        center_pitch = 100
 
-                        # 2. Updated Attention Logic
-                        # Now we can use small, clean numbers
-                        is_facing_forward = abs(corrected_yaw) < 20 
-                        is_looking_at_screen = abs(corrected_pitch) < 25 
+                        # 2. Calculate the difference (how far you have moved from center)
+                        diff_yaw = yaw - center_yaw
+                        diff_pitch = pitch - center_pitch
 
-                        if is_facing_forward and is_looking_at_screen:
+                        # 3. Use the Absolute Difference for the threshold
+                        # Yaw threshold 25: allows 25 degrees left or right from -15
+                        # Pitch threshold 30: allows 30 degrees up or down from 100
+                        
+                        print(f"Debug: Yaw={yaw:.2f}, Pitch={pitch:.2f}, Success={success_pnp}")
+                        if abs(diff_yaw) < 25 and abs(diff_pitch) < 30:
+                            attentive += 1
                             label, color = "Attentive", (0, 255, 0)
                         else:
+                            distracted += 1
                             label, color = "Distracted", (0, 0, 255)
                             
 
