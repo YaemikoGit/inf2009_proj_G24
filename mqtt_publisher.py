@@ -58,6 +58,7 @@ def publish_light_status():
     client.publish(TOPIC_LIGHT, json.dumps(payload))
     return payload
 
+
 def publish_headcount():
     success, frame = camera.read()
     if not success:

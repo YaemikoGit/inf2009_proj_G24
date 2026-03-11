@@ -109,7 +109,35 @@ def detect_faces_and_pose(frame, return_attention=False):  # <- added return_att
             yaw = float(yaw)
 
             # Attention logic
-            is_attentive = abs(yaw) < 25 and abs(pitch) < 20
+            # is_attentive = abs(yaw) < 25 and abs(pitch) < 20
+            # if is_attentive:
+            #     attentive += 1
+            #     label = "Attentive"
+            #     color = (0, 255, 0)   # green
+            # else:
+            #     distracted += 1
+            #     label = "Distracted"
+            #     color = (0, 0, 255)   # red
+
+            # cv2.putText(frame, f"{label} Y:{yaw:.1f} P:{pitch:.1f}",
+            #             (x1, y1 - 10),
+            #             cv2.FONT_HERSHEY_SIMPLEX,
+            #             0.5, color, 2)
+    
+            # Yaw:
+            #  0° = facing camera
+            # + or - 25° = acceptable slight turn        
+            is_facing_forward = abs(yaw) < 25
+
+            # Pitch:
+            #  0° = forward
+            # -30° = looking slightly down (laptop)
+            # -40° = too far down -> distracted
+            # +20° = too far up -> distracted
+            is_laptop_or_forward = -35 < pitch < 15
+
+            is_attentive = is_facing_forward and is_laptop_or_forward
+
             if is_attentive:
                 attentive += 1
                 label = "Attentive"
