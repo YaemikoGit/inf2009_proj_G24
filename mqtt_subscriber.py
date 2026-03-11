@@ -13,6 +13,7 @@ socketio = SocketIO(app, cors_allowed_origins="*")
 latest_temp = {"status": "waiting", "temperature": "No data yet", "humidity": "No data yet", "timestamp": None}
 latest_light = {"status": "waiting", "light": "No data yet", "timestamp": None}
 latest_headcount = {"count": 0, "image": None, "attentive": 0, "distracted": 0, "timestamp": None}
+latest_sound = {"status": "waiting", "label": "No data yet", "timestamp": None}
 
 # --- MQTT Setup ---
 def on_message(client, userdata, message):
@@ -63,12 +64,23 @@ def on_message(client, userdata, message):
             "distracted": payload.get("distracted", 0)
         })
 
+    ############ for sound ################
+    elif message.topic == "sensors/sound":
+        try:
+            latest_sound = payload
+            latest_sound["timestamp"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            print(f"Sound update: {latest_sound}")
+            socketio.emit("sound_update", latest_sound)
+        except Exception as e:
+            print(f"Failed to handle sound message: {e}")
+
 mqtt_client = mqtt.Client("Subscriber")
 mqtt_client.on_message = on_message
-mqtt_client.connect("192.168.137.42", 1883)
+mqtt_client.connect("172.20.10.12", 1883)
 mqtt_client.subscribe("sensors/temperature")
 mqtt_client.subscribe("sensors/light")
 mqtt_client.subscribe("sensors/headcount")
+mqtt_client.subscribe("sensors/sound")
 
 # Run MQTT loop in background thread
 mqtt_thread = threading.Thread(target=mqtt_client.loop_forever, daemon=True)
@@ -97,6 +109,10 @@ def data_headcount():
         "distracted": latest_headcount.get("distracted", 0),
         "timestamp": latest_headcount.get("timestamp")
     })
+
+@app.route('/data/sound')
+def data_sound():
+    return jsonify(latest_sound)
 
 if __name__ == "__main__":
     socketio.run(app, host="0.0.0.0", port=5000, debug=False)

@@ -9,20 +9,30 @@ import time
 model = joblib.load("sound_model.pkl")
 
 # Recording settings
-fs = 16000       # sample rate
-duration = 2     # seconds per recording segment
+fs = 16000  # sample rate
+duration = 2  # seconds per recording segment
 
-print("Real-time sound monitoring started. Press Ctrl+C to stop.")
+# to check for sound sensor not detected
+_STALE_TIMEOUT = 10  # 10s no data -> prob not connected
+_last_check_time = 0
 
-# print decision rules
-rules = export_text(model, feature_names=['rms','peak','variance','dBFS'])
-print("Rules: \n" + rules)
 
-try:
-    while True:
+def get_sound():
+    global _last_check_time
+
+    try:
         # Record audio
         recording = sd.rec(int(duration * fs), samplerate=fs, channels=1)
         sd.wait()
+
+        # Check if recording is valid
+        if recording is None or not np.any(recording):
+            elapsed = time.time() - _last_check_time
+            if elapsed > _STALE_TIMEOUT:
+                raise RuntimeError("Sound sensor not detected")
+            else:
+                return None  # ignore short glitches
+        _last_check_time = time.time()
 
         # Feature extraction
         rms = np.sqrt(np.mean(recording**2))
@@ -30,16 +40,26 @@ try:
         variance = np.var(recording)
         dBFS = 20 * np.log10(peak) if peak != 0 else -100
 
-        features = np.array([[rms, peak, variance, dBFS]])
-
         # Make prediction
+        features = np.array([[rms, peak, variance, dBFS]])
         label = model.predict(features)[0]
 
-        # Print result
-        print(f"RMS: {rms:.4f}, Peak: {peak:.4f}, Var: {variance:.6f}, dBFS: {dBFS:.2f} --> Predicted: {label}")
+        # # Print result
+        # print(
+        #     f"RMS: {rms:.4f}, Peak: {peak:.4f}, Var: {variance:.6f}, dBFS: {dBFS:.2f} --> Predicted: {label}"
+        # )
 
-        # Small delay to avoid overlapping recordings
-        time.sleep(0.1)
+        # Prepare result
+        payload = {
+            "rms": rms,
+            "peak": peak,
+            "variance": variance,
+            "dBFS": dBFS,
+            "label": label,
+        }
 
-except KeyboardInterrupt:
-    print("\nMonitoring stopped by user.")
+        return payload
+
+    except Exception as e:
+        print(f"Error in get_sound(): {e}")
+        return None

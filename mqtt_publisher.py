@@ -21,12 +21,20 @@ except ImportError:
     HAS_TEMP = False
     print("Temperature sensor not available - skipping")
 
+try:
+    from microphone.actual_noise import get_sound
+    HAS_SOUND = True
+except ImportError:
+    HAS_SOUND = False
+    print("Sound sensor not available - skipping")
+
 client = mqtt.Client("Publisher")
 client.connect("192.168.137.42", 1883)
 
 TOPIC_TEMP = "sensors/temperature"
 TOPIC_LIGHT = "sensors/light"
 TOPIC_HEADCOUNT = "sensors/headcount"
+TOPIC_SOUND = "sensors/sound"
 
 ############ for temperature ################
 def publish_temperature():
@@ -91,11 +99,29 @@ def publish_headcount():
     client.publish(TOPIC_HEADCOUNT, json.dumps(payload))
     print(f"Headcount: {count} | Attentive: {attention['attentive']} Distracted: {attention['distracted']}")
 
+############ for sound ################
+def publish_sound():
+    if not HAS_SOUND:
+        return None
+    try:
+        payload = get_sound()
+        if payload is None:
+            raise RuntimeError("Sound data invalid")
+        payload["status"] = "ok"
+    except Exception as e:
+        print(f"Sound sensor error: {e}")
+        payload = {"status": "error", "message": "Sound sensor not detected"}
+    
+    client.publish(TOPIC_SOUND, json.dumps(payload))
+    return payload
+
+
 
 # Main loop to publish data at intervals
 if __name__ == "__main__":
     last_temp_time = 0
     last_light_time = 0
+    last_sound_time = 0
     
     try:
         while True:
@@ -112,6 +138,12 @@ if __name__ == "__main__":
                 light_result = publish_light_status()
                 print(f"Light: {light_result}")
                 last_light_time = now
+
+            # Sound every 5 seconds
+            if HAS_SOUND and now - last_sound_time >= 5:
+                sound_results = publish_sound()
+                print(f"Sound: {sound_results}")
+                last_sound_time = now
             
             # Headcount every 1 second
             publish_headcount()

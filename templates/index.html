@@ -185,6 +185,19 @@
                 <p class="timestamp" id="temp-time">Never</p>
             </div>
 
+             <!-- Sound Card -->
+            <div class="card">
+                <h2>🔊 Noise Level</h2>
+                {% if light.status == 'ok' %}
+                    <div class="value ok" id="light-value">{{ light.light }}</div>
+                    <span class="badge ok" id="sensor-status">{{ light.status }}</span>
+                {% else %}
+                    <div class="value error" id="light-value">Sensor Not Detected</div>
+                    <span class="badge error" id="sensor-status">{{ sound.status or 'error' }}</span>
+                {% endif %}
+                <p class="timestamp" id="light-time">{{ sound.timestamp or 'Never' }}</p>
+            </div>
+
         </div>
     </div>
 
