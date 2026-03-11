@@ -203,6 +203,9 @@ def detect_faces_and_pose(frame, return_attention=False):
                 for i, landmarks in enumerate(landmarks_all):
                     points = landmarks[0] # The 68 points
                     
+                    for (px, py) in image_points:
+                        cv2.circle(frame, (int(px), int(py)), 3, (255, 0, 255), -1)
+                    
                     # Selection of points for SolvePnP (Nose, Chin, Eyes, Mouth corners)
                     # Indices based on the 68-point map
                     image_points = np.array([
@@ -248,30 +251,30 @@ def detect_faces_and_pose(frame, return_attention=False):
                         pitch, yaw, roll = euler.flatten()
 
                         # --- Attention Logic ---
-                        # Tightened for better accuracy
-                        # is_facing_forward = abs(yaw) < 30 
-                        # is_looking_at_screen = -50 < pitch < 25 
-                        # 1. Normalize the values based on your "facing camera" readings
-                        norm_yaw = yaw + 15   # If raw is -15, this becomes 0
-                        norm_pitch = pitch - 100 # If raw is 100, this becomes 0
+                        # 1. Define your "Center" (What the camera sees when you are looking at it)
+                        center_yaw = -15
+                        center_pitch = 100
 
-                        # 2. Now use standard thresholds on the normalized values
-                        is_facing_forward = abs(norm_yaw) < 25 
-                        is_looking_at_screen = abs(norm_pitch) < 30
+                        # 2. Calculate the difference (how far you have moved from center)
+                        diff_yaw = yaw - center_yaw
+                        diff_pitch = pitch - center_pitch
 
-                        is_attentive = is_facing_forward and is_looking_at_screen
-                        if is_attentive:
+                        # 3. Use the Absolute Difference for the threshold
+                        # Yaw threshold 25: allows 25 degrees left or right from -15
+                        # Pitch threshold 30: allows 30 degrees up or down from 100
+                        if abs(diff_yaw) < 25 and abs(diff_pitch) < 30:
                             attentive += 1
                             label, color = "Attentive", (0, 255, 0)
                         else:
                             distracted += 1
                             label, color = "Distracted", (0, 0, 255)
+                            
 
                         # Draw Box and Label
                         x1, y1, x2, y2 = face_boxes[i]
                         cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
-                        cv2.putText(frame, f"{label} Y:{int(yaw)} P:{int(pitch)}", (x1, y1 - 10),
-                                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
+                        cv2.putText(frame, f"Y:{int(yaw)} P:{int(pitch)} R:{int(roll)}", (x1, y2 + 20),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
 
     except Exception as e:
         print("Pose Error:", e)
