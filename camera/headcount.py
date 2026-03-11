@@ -196,7 +196,6 @@ def detect_faces_and_pose(frame, return_attention=False):
         if headcount > 0:
             # 1. Convert face_boxes to the format Facemark expects (a list of rectangles)
             # Ensure face_boxes are [x, y, w, h]
-            padding = 20
             formatted_boxes = []
             for box in face_boxes:
                 x1, y1, x2, y2 = box
