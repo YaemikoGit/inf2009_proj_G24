@@ -30,13 +30,17 @@ def on_message(client, userdata, message):
     
     payload["timestamp"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     
+    
+    ############ for light ################
     if message.topic == "sensors/light":
         if "light" in payload and isinstance(payload["light"], bool):
             payload["light"] = "On" if payload["light"] else "Off"
         latest_light = payload
         print(f"Light update: {payload}")
         socketio.emit("light_update", payload)
-        
+    
+    
+    ############ for temperature ################
     elif message.topic == "sensors/temperature":
         try:
             latest_temp = payload
@@ -46,6 +50,8 @@ def on_message(client, userdata, message):
         except Exception as e:
             print(f"Failed to handle temperature message: {e}")
     
+    
+    ############ for camera ################
     elif message.topic == "sensors/headcount":
         latest_headcount = payload
         print(f"Headcount: {payload.get('count')} | Attentive: {payload.get('attentive', 0)} Distracted: {payload.get('distracted', 0)}")

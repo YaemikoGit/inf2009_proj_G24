@@ -28,6 +28,7 @@ TOPIC_TEMP = "sensors/temperature"
 TOPIC_LIGHT = "sensors/light"
 TOPIC_HEADCOUNT = "sensors/headcount"
 
+############ for temperature ################
 def publish_temperature():
     if not HAS_TEMP:
         return None
@@ -45,6 +46,7 @@ def publish_temperature():
     client.publish(TOPIC_TEMP, json.dumps(payload))
     return payload
 
+############ for light ################
 def publish_light_status():
     if not HAS_LIGHT:
         return None
@@ -58,7 +60,7 @@ def publish_light_status():
     client.publish(TOPIC_LIGHT, json.dumps(payload))
     return payload
 
-
+############ for camera ################
 def publish_headcount():
     success, frame = camera.read()
     if not success:
@@ -89,6 +91,8 @@ def publish_headcount():
     client.publish(TOPIC_HEADCOUNT, json.dumps(payload))
     print(f"Headcount: {count} | Attentive: {attention['attentive']} Distracted: {attention['distracted']}")
 
+
+# Main loop to publish data at intervals
 if __name__ == "__main__":
     last_temp_time = 0
     last_light_time = 0
