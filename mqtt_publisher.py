@@ -29,7 +29,7 @@ except ImportError:
     print("Sound sensor not available - skipping")
 
 client = mqtt.Client("Publisher")
-client.connect("192.168.137.42", 1883)
+client.connect("localhost", 1883)
 
 TOPIC_TEMP = "sensors/temperature"
 TOPIC_LIGHT = "sensors/light"
@@ -107,6 +107,13 @@ def publish_sound():
         payload = get_sound()
         if payload is None:
             raise RuntimeError("Sound data invalid")
+        # Convert all numeric values to Python floats
+        for key in ["rms", "peak", "variance", "dBFS"]:
+            if key in payload:
+                payload[key] = float(payload[key])
+        # If label is a numpy type, convert to string
+        if "label" in payload:
+            payload["label"] = str(payload["label"])
         payload["status"] = "ok"
     except Exception as e:
         print(f"Sound sensor error: {e}")
@@ -114,7 +121,6 @@ def publish_sound():
     
     client.publish(TOPIC_SOUND, json.dumps(payload))
     return payload
-
 
 
 # Main loop to publish data at intervals
@@ -139,8 +145,8 @@ if __name__ == "__main__":
                 print(f"Light: {light_result}")
                 last_light_time = now
 
-            # Sound every 5 seconds
-            if HAS_SOUND and now - last_sound_time >= 5:
+            # Sound every 1 second
+            if HAS_SOUND and now - last_sound_time >= 1:
                 sound_results = publish_sound()
                 print(f"Sound: {sound_results}")
                 last_sound_time = now

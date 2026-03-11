@@ -4,10 +4,19 @@ from sklearn.tree import export_text
 import numpy as np
 import sounddevice as sd
 import time
+import os
 
-# Load trained model
-model = joblib.load("sound_model.pkl")
+# Get the absolute path to the repo root (current file's parent folders)
+REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__))) 
+MODEL_PATH = os.path.join(REPO_ROOT, "microphone", "sound_model.pkl")
 
+try:
+	# Load trained model
+    model = joblib.load(MODEL_PATH)
+except FileNotFoundError:
+    print(f"Error: sound_model.pkl not found at {MODEL_PATH}")
+    model = None
+    
 # Recording settings
 fs = 16000  # sample rate
 duration = 2  # seconds per recording segment
