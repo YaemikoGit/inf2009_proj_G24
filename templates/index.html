@@ -287,13 +287,16 @@
 
             if (data.status === "ok") {
                 value.textContent = data.light;
+                const isBad = data.light === "Off" || data.light === "False" || data.light === false;
+                value.className = "value " + (isBad ? "error" : "ok");
+                status.className = "badge " + (isBad ? "error" : "ok");
             } else {
                 value.textContent = "Sensor Not Detected";
+                value.className = "value error";
+                status.className = "badge error";
             }
 
-            value.className = "value " + (data.status === "ok" ? "ok" : "error");
             status.textContent = data.status || "error";
-            status.className = "badge " + (data.status === "ok" ? "ok" : "error");
             document.getElementById("light-time").textContent = data.timestamp || "";
         });
 
@@ -306,14 +309,24 @@
             if (data.status === "ok") {
                 value.textContent = data.temperature + " °C";
                 humValue.textContent = data.humidity + " %";
-                value.className = "value ok";
+                
+                const theTemp = parseFloat(data.temperature);
+                const theHum = parseFloat(data.humidity);
+                const isTempBad = theTemp < 20 || theTemp > 28;
+                const isHumBad = theHum < 30 || theHum > 70;
+                
+                value.className = "value " + (isTempBad ? "error" : "ok");
+                humValue.className = "value " + (isHumBad ? "error" : "ok");
+                status.className = "badge " + ((isTempBad || isHumBad) ? "error" : "ok");
             } else {
                 value.textContent = data.message || "Error";
+                humValue.textContent = "Error";
                 value.className = "value error";
+                humValue.className = "value error";
+                status.className = "badge error";
             }
 
             status.textContent = data.status || "error";
-            status.className = "badge " + (data.status === "ok" ? "ok" : "error");
             time.textContent = data.timestamp || "";
         });
 
@@ -339,13 +352,16 @@
 
             if (data.status === "ok") {
                 value.textContent = data.label || "Detected";
+                const isSoundBad = data.label && (data.label.toLowerCase() === "noisy" || data.label.toLowerCase() === "loud");
+                value.className = "value " + (isSoundBad ? "error" : "ok");
+                status.className = "badge " + (isSoundBad ? "error" : "ok");
             } else {
                 value.textContent = "Sensor Not Detected";
+                value.className = "value error";
+                status.className = "badge error";
             }
 
-            value.className = "value " + (data.status === "ok" ? "ok" : "error");
             status.textContent = data.status || "error";
-            status.className = "badge " + (data.status === "ok" ? "ok" : "error");
             time.textContent = data.timestamp || "";
         });
     </script>

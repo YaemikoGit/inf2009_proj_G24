@@ -208,11 +208,15 @@ def publish_headcount():
     annotated_frame, attention = detect_faces_and_pose(frame, return_attention=True)
     
     # Use ssd_net for face counting
-    blob = cv2.dnn.blobFromImage(frame, 1.0, (300, 300), (104.0, 177.0, 123.0))
-    ssd_net.setInput(blob)
-    detections = ssd_net.forward()
-    count = sum(1 for i in range(detections.shape[2]) if detections[0, 0, i, 2] >= 0.5)
+    # blob = cv2.dnn.blobFromImage(frame, 1.0, (300, 300), (104.0, 177.0, 123.0))
+    # ssd_net.setInput(blob)
+    # detections = ssd_net.forward()
+    # count = sum(1 for i in range(detections.shape[2]) if detections[0, 0, i, 2] >= 0.5)
     
+    # Calculate count based on the attention module's findings rather than ssd_net
+    # This prevents the mismatch where ssd_net reports 1 face but pose detection finds 2+
+    count = attention["attentive"] + attention["distracted"]
+
     # Encode image
     _, buffer = cv2.imencode('.jpg', annotated_frame)
     image_base64 = base64.b64encode(buffer).decode('utf-8')
