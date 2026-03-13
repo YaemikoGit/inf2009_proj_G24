@@ -32,7 +32,7 @@
         }
 
         .camera-panel {
-            flex: 2;
+            flex: 1.5;
             background: white;
             border-radius: 12px;
             box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
@@ -49,14 +49,15 @@
             width: 100%;
             border-radius: 8px;
             background: #222;
-            min-height: 360px;
-            object-fit: cover;
+            height: auto;
+            max-height: 480px;
+            object-fit: contain;
             display: block;
         }
 
         .no-image {
             width: 100%;
-            min-height: 360px;
+            height: 360px;
             background: #222;
             border-radius: 8px;
             display: flex;
@@ -68,29 +69,34 @@
 
         .sensor-panel {
             flex: 1;
-            display: flex;
-            flex-direction: column;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
             gap: 16px;
+        }
+
+        /* Make Settings & Attention span full width of the grid */
+        .card.full-width {
+            grid-column: 1 / -1;
         }
 
         .card {
             background: white;
             border-radius: 12px;
             box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
-            padding: 24px;
+            padding: 16px;
             text-align: center;
         }
 
         .card h2 {
-            font-size: 1em;
+            font-size: 0.9em;
             color: #888;
-            margin-bottom: 10px;
+            margin-bottom: 8px;
             text-transform: uppercase;
             letter-spacing: 0.05em;
         }
 
         .value {
-            font-size: 2.2em;
+            font-size: 1.8em;
             font-weight: bold;
             color: #333;
         }
@@ -146,6 +152,15 @@
 <body>
     <h1>🏫 Classroom Analytics</h1>
 
+    <!-- Top Alerts Panel -->
+    <div style="max-width: 1200px; margin: 0 auto 24px auto;">
+        <div class="card" style="text-align: left;">
+            <h2>⚠️ Active Alerts</h2>
+            <ul id="alerts-list" style="margin-top: 10px; max-height: 150px; overflow-y: auto; list-style:none; font-size: 0.9em; padding-right: 5px;">
+            </ul>
+        </div>
+    </div>
+
     <div class="dashboard">
 
         <!-- LEFT: Camera Snapshot -->
@@ -166,16 +181,16 @@
         <div class="sensor-panel">
 
             <!-- Settings Card -->
-            <div class="card" style="padding-bottom: 12px;">
+            <div class="card full-width" style="padding-bottom: 12px; position: relative; z-index: 10;">
                 <h2>⚙️ Settings</h2>
                 <div style="margin-top: 10px; text-align: left;">
                     <label style="font-size: 0.9em; color:#666;">Attention Threshold: <span id="threshold-display" style="font-weight:bold; color:#333;">50</span>%</label>
-                    <input type="range" id="threshold-slider" min="10" max="100" value="50" style="width: 100%; margin-top: 10px;" oninput="setThreshold()">
+                    <input type="range" id="threshold-slider" min="10" max="100" value="50" style="width: 100%; margin-top: 10px; cursor: pointer;" oninput="updateDisplay()" onchange="setThreshold()">
                 </div>
             </div>
 
             <!-- Attention Card -->
-            <div class="card">
+            <div class="card full-width">
                 <h2>🧠 Attention</h2>
                 <div class="attention-row">
                     <div>
@@ -225,22 +240,19 @@
                 <p class="timestamp" id="sound-time">{{ sound.timestamp or 'Never' }}</p>
             </div>
 
-            <!-- Alerts Panel -->
-            <div class="card" style="text-align: left;">
-                <h2>⚠️ Active Alerts</h2>
-                <ul id="alerts-list" style="margin-top: 10px; max-height: 180px; overflow-y: auto; list-style:none; font-size: 0.85em; padding-right: 5px;">
-                </ul>
-            </div>
-
         </div>
     </div>
 
     <script>
         const socket = io();
 
-        function setThreshold() {
+        function updateDisplay() {
             const val = document.getElementById("threshold-slider").value;
             document.getElementById("threshold-display").textContent = val;
+        }
+
+        function setThreshold() {
+            const val = document.getElementById("threshold-slider").value;
             socket.emit("set_attention_threshold", { threshold: val / 100.0 });
         }
 
