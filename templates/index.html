@@ -165,6 +165,15 @@
         <!-- RIGHT: Sensor Cards -->
         <div class="sensor-panel">
 
+            <!-- Settings Card -->
+            <div class="card" style="padding-bottom: 12px;">
+                <h2>⚙️ Settings</h2>
+                <div style="margin-top: 10px; text-align: left;">
+                    <label style="font-size: 0.9em; color:#666;">Attention Threshold: <span id="threshold-display" style="font-weight:bold; color:#333;">50</span>%</label>
+                    <input type="range" id="threshold-slider" min="10" max="100" value="50" style="width: 100%; margin-top: 10px;" oninput="setThreshold()">
+                </div>
+            </div>
+
             <!-- Attention Card -->
             <div class="card">
                 <h2>🧠 Attention</h2>
@@ -216,11 +225,61 @@
                 <p class="timestamp" id="sound-time">{{ sound.timestamp or 'Never' }}</p>
             </div>
 
+            <!-- Alerts Panel -->
+            <div class="card" style="text-align: left;">
+                <h2>⚠️ Active Alerts</h2>
+                <ul id="alerts-list" style="margin-top: 10px; max-height: 180px; overflow-y: auto; list-style:none; font-size: 0.85em; padding-right: 5px;">
+                </ul>
+            </div>
+
         </div>
     </div>
 
     <script>
         const socket = io();
+
+        function setThreshold() {
+            const val = document.getElementById("threshold-slider").value;
+            document.getElementById("threshold-display").textContent = val;
+            socket.emit("set_attention_threshold", { threshold: val / 100.0 });
+        }
+
+        socket.on("sensor_alert", (data) => {
+            const list = document.getElementById("alerts-list");
+            const li = document.createElement("li");
+            li.style.color = "#dc2626";
+            li.style.marginBottom = "6px";
+            li.style.borderBottom = "1px solid #eee";
+            li.style.paddingBottom = "4px";
+            
+            const time = data.data.timestamp ? data.data.timestamp.split(' ')[1] : new Date().toLocaleTimeString();
+            li.innerHTML = `<strong>[${time}] SENSOR (${data.data.sensor.toUpperCase()}):</strong> ${data.data.message}`;
+            list.prepend(li);
+        });
+
+        socket.on("attention_alert", (data) => {
+            const list = document.getElementById("alerts-list");
+            const li = document.createElement("li");
+            li.style.color = "#ea580c";
+            li.style.marginBottom = "6px";
+            li.style.borderBottom = "1px solid #eee";
+            li.style.paddingBottom = "4px";
+            li.style.backgroundColor = "#fff7ed";
+            
+            const probs = data.probabilities;
+            const rate = (data.attention_rate * 100).toFixed(0);
+            const time = data.timestamp ? data.timestamp.split(' ')[1] : new Date().toLocaleTimeString();
+            
+            li.innerHTML = `<strong>[${time}] ATTENTION ALERT!</strong> Rate dropped to ${rate}%.<br>
+                            <span style="font-size:0.9em; color:#666;">
+                            Probable causes: Temp (${Math.round(probs.temperature_prob*100)}%), 
+                            Hum (${Math.round(probs.humidity_prob*100)}%), 
+                            Light (${Math.round(probs.light_prob*100)}%), 
+                            Sound (${Math.round(probs.sound_prob*100)}%),
+                            Others (${Math.round(probs.others_prob*100)}%)
+                            </span>`;
+            list.prepend(li);
+        });
 
         socket.on("light_update", (data) => {
             const value = document.getElementById("light-value");

@@ -17,7 +17,7 @@ latest_sound = {"status": "waiting", "rms": None, "peak": None, "variance": None
 
 # --- MQTT Setup ---
 def on_message(client, userdata, message):
-    global latest_temp, latest_light, latest_headcount
+    global latest_temp, latest_light, latest_headcount, latest_sound
     
     try:
         raw = message.payload.decode()
@@ -73,6 +73,16 @@ def on_message(client, userdata, message):
             socketio.emit("sound_update", latest_sound)
         except Exception as e:
             print(f"Failed to handle sound message: {e}")
+            
+    ############ for alerts ################
+    elif message.topic.startswith("alerts/sensor_alerts/"):
+        alert_type = message.topic.split("/")[-1]
+        socketio.emit("sensor_alert", {"type": alert_type, "data": payload})
+        print(f"Sensor Alert: {alert_type} - {payload}")
+        
+    elif message.topic == "alerts/attention_alerts":
+        socketio.emit("attention_alert", payload)
+        print(f"Attention Alert: {payload}")
 
 mqtt_client = mqtt.Client("Subscriber")
 mqtt_client.on_message = on_message
@@ -81,10 +91,21 @@ mqtt_client.subscribe("sensors/temperature")
 mqtt_client.subscribe("sensors/light")
 mqtt_client.subscribe("sensors/headcount")
 mqtt_client.subscribe("sensors/sound")
+mqtt_client.subscribe("alerts/#")
 
 # Run MQTT loop in background thread
 mqtt_thread = threading.Thread(target=mqtt_client.loop_forever, daemon=True)
 mqtt_thread.start()
+
+# --- SocketIO Events ---
+@socketio.on('set_attention_threshold')
+def handle_set_threshold(data):
+    try:
+        val = float(data.get("threshold"))
+        mqtt_client.publish("settings/attention_threshold", json.dumps({"threshold": val}))
+        print(f"Sent new threshold to publisher: {val}")
+    except Exception as e:
+        print("Failed to set threshold", e)
 
 # --- Flask Routes ---
 @app.route('/')
