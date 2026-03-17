@@ -7,7 +7,7 @@ from datetime import datetime
 from flask_socketio import SocketIO, emit
 
 app = Flask(__name__)
-socketio = SocketIO(app, cors_allowed_origins="*")
+socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading', compression_threshold=1024)
 
 # Store latest data separately
 latest_temp = {"status": "waiting", "temperature": "No data yet", "humidity": "No data yet", "timestamp": None}
@@ -29,7 +29,9 @@ def on_message(client, userdata, message):
         print(f"Failed to parse message: {str(e)}")
         return
     
-    payload["timestamp"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    # Add timestamp if not present
+    if "timestamp" not in payload:
+        payload["timestamp"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     
     
     ############ for light ################
@@ -37,7 +39,6 @@ def on_message(client, userdata, message):
         if "light" in payload and isinstance(payload["light"], bool):
             payload["light"] = "On" if payload["light"] else "Off"
         latest_light = payload
-        print(f"Light update: {payload}")
         socketio.emit("light_update", payload)
     
     
@@ -45,8 +46,6 @@ def on_message(client, userdata, message):
     elif message.topic == "sensors/temperature":
         try:
             latest_temp = payload
-            latest_temp["timestamp"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            print(f"Temperature update: {latest_temp}")
             socketio.emit("temperature_update", latest_temp)
         except Exception as e:
             print(f"Failed to handle temperature message: {e}")
@@ -54,22 +53,29 @@ def on_message(client, userdata, message):
     
     ############ for camera ################
     elif message.topic == "sensors/headcount":
+        # Check if this is a new image (only send if changed)
+        has_new_image = payload.get("image") and payload.get("image") != latest_headcount.get("image")
+        
         latest_headcount = payload
-        print(f"Headcount: {payload.get('count')} | Attentive: {payload.get('attentive', 0)} Distracted: {payload.get('distracted', 0)}")
-        socketio.emit("headcount_update", {
+        
+        # Build minimal payload
+        emit_data = {
             "count": payload.get("count"),
             "timestamp": payload.get("timestamp"),
-            "image": payload.get("image"),
             "attentive": payload.get("attentive", 0),
             "distracted": payload.get("distracted", 0)
-        })
+        }
+        
+        # Only send image when it actually changes
+        if has_new_image:
+            emit_data["image"] = payload.get("image")
+        
+        socketio.emit("headcount_update", emit_data)
 
     ############ for sound ################
     elif message.topic == "sensors/sound":
         try:
             latest_sound = payload
-            latest_sound["timestamp"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            print(f"Sound update: {latest_sound}")
             socketio.emit("sound_update", latest_sound)
         except Exception as e:
             print(f"Failed to handle sound message: {e}")
@@ -86,7 +92,7 @@ def on_message(client, userdata, message):
 
 mqtt_client = mqtt.Client("Subscriber")
 mqtt_client.on_message = on_message
-mqtt_client.connect("172.20.10.2", 1883)
+mqtt_client.connect("10.179.208.202", 1883)
 mqtt_client.subscribe("sensors/temperature")
 mqtt_client.subscribe("sensors/light")
 mqtt_client.subscribe("sensors/headcount")
@@ -112,6 +118,7 @@ def handle_set_threshold(data):
 def index():
     return render_template('index.html',
                            light=latest_light,
+                           temperature=latest_temp,
                            headcount=latest_headcount,
                            sound=latest_sound)
 

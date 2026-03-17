@@ -5,7 +5,9 @@ from datetime import datetime
 import json
 import base64
 import cv2
-from camera.headcount import detect_faces_and_pose, ssd_net, camera
+from camera.headcount import detect_faces_and_pose, camera
+from collections import deque
+import threading
 
 try:
     from sensors.light import get_light
@@ -20,14 +22,14 @@ try:
 except ImportError:
     HAS_TEMP = False
     print("Temperature sensor not available - skipping")
-
+    
 try:
     from microphone.actual_noise import get_sound
     HAS_SOUND = True
 except ImportError:
     HAS_SOUND = False
     print("Sound sensor not available - skipping")
-
+    
 client = mqtt.Client("Publisher")
 
 TOPIC_TEMP = "sensors/temperature"
@@ -44,6 +46,67 @@ LATEST_SENSORS = {
     "sound_dbfs": -50.0
 }
 
+# Alert rate limiting
+last_alert_times = {
+    "temperature": 0,
+    "light": 0,
+    "sound": 0,
+    "attention": 0
+}
+ALERT_COOLDOWN = 10  # seconds between same alert type
+
+# Message queue for async publishing
+publish_queue = deque(maxlen=100)
+publish_lock = threading.Lock()
+
+# Camera frame buffer
+latest_camera_data = {
+    "count": 0,
+    "attentive": 0,
+    "distracted": 0,
+    "image": None,
+    "timestamp": None
+}
+camera_data_lock = threading.Lock()
+
+# Sound data buffer
+latest_sound_data = {
+    "rms": 0,
+    "peak": 0,
+    "variance": 0,
+    "dBFS": -50,
+    "label": "quiet"
+}
+sound_data_lock = threading.Lock()
+
+############ SOUND PROCESSING THREAD ################
+def sound_processing_thread():
+    """Dedicated thread for sound processing - runs independently"""
+    global latest_sound_data
+    
+    print("Sound thread started!")
+    
+    while True:
+        try:
+            if HAS_SOUND:
+                sound_data = get_sound()
+                
+                if sound_data:
+                    # Update shared data
+                    with sound_data_lock:
+                        latest_sound_data = sound_data
+            
+            time.sleep(1)  # Sample sound every 1 second
+            
+        except Exception as e:
+            print(f"Sound processing error: {e}")
+            time.sleep(1)
+
+# Start sound processing thread
+if HAS_SOUND:
+    sound_thread = threading.Thread(target=sound_processing_thread, daemon=True)
+    sound_thread.start()
+
 def on_message(client, userdata, message):
     global ATTENTION_THRESHOLD
     if message.topic == "settings/attention_threshold":
@@ -55,18 +118,50 @@ def on_message(client, userdata, message):
             print("Failed to parse threshold", e)
 
 client.on_message = on_message
-client.connect("localhost", 1883)
+client.connect("10.179.208.202", 1883)
 client.subscribe("settings/attention_threshold")
 client.loop_start()
 
+# Background thread to publish messages asynchronously
+def publish_worker():
+    while True:
+        try:
+            with publish_lock:
+                if publish_queue:
+                    topic, payload = publish_queue.popleft()
+                else:
+                    time.sleep(0.01)
+                    continue
+            
+            # Publish outside the lock
+            client.publish(topic, payload, qos=0)
+        except Exception as e:
+            print(f"Publish error: {e}")
+            time.sleep(0.1)
+
+# Start background publisher
+publisher_thread = threading.Thread(target=publish_worker, daemon=True)
+publisher_thread.start()
+
+def async_publish(topic, payload):
+    """Add message to queue for async publishing"""
+    with publish_lock:
+        publish_queue.append((topic, json.dumps(payload)))
+
 def check_and_publish_sensor_alert(topic_suffix, sensor_type, is_bad, message_detail):
     if is_bad:
+        # Rate limit alerts
+        now = time.time()
+        if now - last_alert_times.get(sensor_type, 0) < ALERT_COOLDOWN:
+            return
+        last_alert_times[sensor_type] = now
+        
         payload = {
             "sensor": sensor_type,
             "message": message_detail,
             "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         }
-        client.publish(f"alerts/sensor_alerts/{topic_suffix}", json.dumps(payload))
+        async_publish(f"alerts/sensor_alerts/{topic_suffix}", payload)
 
 ############ for temperature ################
 def publish_temperature():
@@ -74,17 +169,21 @@ def publish_temperature():
         return None
     try:
         data = get_temperature()
+        
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        
         payload = {
             "status": "ok",
-            "temperature": data['temperature'],
-            "humidity": data['humidity']
+            "temperature": float(data['temperature']),
+            "humidity": float(data['humidity']),
+            "timestamp": timestamp
         }
         
-        LATEST_SENSORS["temperature"] = data['temperature']
-        LATEST_SENSORS["humidity"] = data['humidity']
+        LATEST_SENSORS["temperature"] = payload["temperature"]
+        LATEST_SENSORS["humidity"] = payload["humidity"]
         
-        temp_val = data['temperature']
-        hum_val = data['humidity']
+        temp_val = payload["temperature"]
+        hum_val = payload["humidity"]
 
         is_temp_bad = temp_val < 20 or temp_val > 28
         is_hum_bad = hum_val < 30 or hum_val > 70
@@ -93,9 +192,9 @@ def publish_temperature():
         msg_parts = []
         if is_temp_bad:
             if temp_val < 20:
-                msg_parts.append(f"Temperature too low ({temp_val}°C)")
+                msg_parts.append(f"Temperature too low ({temp_val}C)")
             else:
-                msg_parts.append(f"Temperature too high ({temp_val}°C)")
+                msg_parts.append(f"Temperature too high ({temp_val}C)")
                 
         if is_hum_bad:
             if hum_val < 30:
@@ -105,13 +204,18 @@ def publish_temperature():
 
         msg = " | ".join(msg_parts) if msg_parts else "Normal"
         
-        check_and_publish_sensor_alert("temperature_alerts", "temperature_humidity", is_bad, msg)
+        check_and_publish_sensor_alert("temperature_alerts", "temperature", is_bad, msg)
         
     except Exception as e:
         print(f"Temperature sensor error: {e}")
-        payload = {"status": "error", "message": "Temperature sensor not detected"}
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        payload = {
+            "status": "error",
+            "message": "Temperature sensor not detected",
+            "timestamp": timestamp
+        }
     
-    client.publish(TOPIC_TEMP, json.dumps(payload))
+    async_publish(TOPIC_TEMP, payload)
     return payload
 
 ############ for light ################
@@ -120,20 +224,43 @@ def publish_light_status():
         return None
     try:
         light_status = get_light()
-        payload = {"status": "ok", "light": light_status}
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        
+        payload = {
+            "status": "ok", 
+            "light": light_status,
+            "timestamp": timestamp
+        }
         
         LATEST_SENSORS["light"] = light_status
         is_light_bad = str(light_status).lower() in ["false", "off"]
-        check_and_publish_sensor_alert("light_alerts", "light", is_light_bad, "Light level is off or too low")
+        check_and_publish_sensor_alert("light_alerts", "light", is_light_bad, "Classroom lights are turned OFF")
         
     except Exception as e:
         print(f"Light sensor disconnected: {e}")
-        payload = {"status": "error", "message": "Sensor Disconnected"}
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        payload = {
+            "status": "error", 
+            "message": "Sensor Disconnected",
+            "timestamp": timestamp
+        }
     
-    client.publish(TOPIC_LIGHT, json.dumps(payload))
+    async_publish(TOPIC_LIGHT, payload)
     return payload
+    
+# Cache the blame probabilities calculation
+blame_cache = None
+blame_cache_time = 0
+BLAME_CACHE_TTL = 2  # seconds
 
 def calculate_blame_probabilities():
+    global blame_cache, blame_cache_time
+    
+    # Return cached result if still valid
+    now = time.time()
+    if blame_cache and (now - blame_cache_time) < BLAME_CACHE_TTL:
+        return blame_cache
+    
     temp_bad = LATEST_SENSORS["temperature"] < 20 or LATEST_SENSORS["temperature"] > 28
     hum_bad = LATEST_SENSORS["humidity"] < 30 or LATEST_SENSORS["humidity"] > 70
     light_bad = str(LATEST_SENSORS["light"]).lower() in ["false", "off"]
@@ -145,7 +272,7 @@ def calculate_blame_probabilities():
         maj_share = 0.8 / bad_count
         min_share = 0.15 / (4 - bad_count) if bad_count < 4 else 0
         others_prob = 0.05 if bad_count < 4 else 0.0
-        return {
+        result = {
             "temperature_prob": round(maj_share if temp_bad else min_share, 2),
             "humidity_prob": round(maj_share if hum_bad else min_share, 2),
             "light_prob": round(maj_share if light_bad else min_share, 2),
@@ -156,9 +283,8 @@ def calculate_blame_probabilities():
         # Distance calculation for when all sensors are "OK"
         temp_dist = min(abs(LATEST_SENSORS["temperature"] - 24) / 10.0, 1.0)
         hum_dist = min(abs(LATEST_SENSORS["humidity"] - 50) / 40.0, 1.0)
-        light_dist = 0.1 # Base distance for OK light
+        light_dist = 0.1
         
-        # Calculate sound probability based on how close the metrics are to the 'noisy' rules
         dbfs = LATEST_SENSORS.get("sound_dbfs", -50.0)
         variance = LATEST_SENSORS.get("sound_variance", 0.0)
         rms = LATEST_SENSORS.get("sound_rms", 0.0)
@@ -168,101 +294,174 @@ def calculate_blame_probabilities():
         if variance > 0.0:
             if dbfs <= -22.92:
                 if rms <= 0.03:
-                    # Needs rms > 0.03 to progress towards 'noisy'. Calculate closeness.
                     sound_dist = rms / 0.03
                     if peak <= 0.38:
-                        sound_dist = (sound_dist + 1.0) / 2.0  # Path align with 'noisy' peak condition
+                        sound_dist = (sound_dist + 1.0) / 2.0
                 else: 
-                    # rms > 0.03, but peak > 0.38 since it wasn't alarmed as noisy
                     if peak > 0.38:
-                        # Needs peak to drop <= 0.38 to become noisy
                         sound_dist = 0.38 / peak if peak > 0 else 0
             else:
                 if peak <= 0.45:
-                    # Needs peak > 0.45 to become noisy
                     sound_dist = peak / 0.45
                     
-        # Apply base scaling for 'others' when sensors are completely perfect
-        # If the environment is completely perfect (dist = 0), others will take the majority
         others_dist = 0.8
-        
+
         total = temp_dist + hum_dist + light_dist + sound_dist + others_dist
         if total <= 0: total = 1
         
-        return {
+        result = {
             "temperature_prob": round(temp_dist/total, 2),
             "humidity_prob": round(hum_dist/total, 2),
             "light_prob": round(light_dist/total, 2),
             "sound_prob": round(sound_dist/total, 2),
             "others_prob": round(others_dist/total, 2)
         }
+    
+    # Update cache
+    blame_cache = result
+    blame_cache_time = now
+    return result
+
+############ CAMERA PROCESSING THREAD ################
+last_encoded_image = None
+last_encoded_image_lock = threading.Lock()
+
+def camera_processing_thread():
+    """Dedicated thread for camera processing - runs independently"""
+    global latest_camera_data, last_encoded_image
+    
+    frame_count = 0
+    last_image_encode_time = 0
+    IMAGE_ENCODE_INTERVAL = 1  # Encode image every 1 second
+    
+    print("Camera thread started!")
+    
+    while True:
+        try:
+            success, frame = camera.read()
+            if not success:
+                print("Camera read failed")
+                time.sleep(0.1)
+                continue
+            
+            # Always process for headcount/attention
+            annotated_frame, attention = detect_faces_and_pose(frame, return_attention=True)
+            count = attention["attentive"] + attention["distracted"]
+            
+            # Only encode image if faces are detected
+            now = time.time()
+            if count > 0 and now - last_image_encode_time >= IMAGE_ENCODE_INTERVAL:
+                # Resize frame before encoding to reduce size
+                h, w = annotated_frame.shape[:2]
+                new_w = 480  # Reduce width
+                new_h = int(h * (new_w / w))
+                small_frame = cv2.resize(annotated_frame, (new_w, new_h))
+                
+                # Encode with moderate quality
+                encode_params = [cv2.IMWRITE_JPEG_QUALITY, 65]
+                _, buffer = cv2.imencode('.jpg', small_frame, encode_params)
+                image_base64 = base64.b64encode(buffer).decode('utf-8')
+                
+                # Update the last encoded image
+                with last_encoded_image_lock:
+                    last_encoded_image = image_base64
+                
+                last_image_encode_time = now
+            
+            # Update shared data
+            with camera_data_lock:
+                with last_encoded_image_lock:
+                    # Only keep image if we still have faces
+                    current_image = last_encoded_image if count > 0 else None
+                
+                latest_camera_data = {
+                    "count": count,
+                    "attentive": attention["attentive"],
+                    "distracted": attention["distracted"],
+                    "image": current_image,
+                    "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                }
+            
+            frame_count += 1
+            
+            # Small delay to prevent maxing out CPU
+            time.sleep(0.05)  # ~20 FPS processing
+            
+        except Exception as e:
+            print(f"Camera processing error: {e}")
+            time.sleep(0.1)
+
+# Start camera processing thread
+camera_thread = threading.Thread(target=camera_processing_thread, daemon=True)
+camera_thread.start()
 
 ############ for camera ################
 def publish_headcount():
-    success, frame = camera.read()
-    if not success:
-        print("Camera read failed")
-        return
+    """Just publish the latest camera data - no processing here"""
+    global last_alert_times
     
-    # Use return_attention=True to get attention data
-    annotated_frame, attention = detect_faces_and_pose(frame, return_attention=True)
+    # Get the latest processed data
+    with camera_data_lock:
+        data = latest_camera_data.copy()
     
-    # Use ssd_net for face counting
-    # blob = cv2.dnn.blobFromImage(frame, 1.0, (300, 300), (104.0, 177.0, 123.0))
-    # ssd_net.setInput(blob)
-    # detections = ssd_net.forward()
-    # count = sum(1 for i in range(detections.shape[2]) if detections[0, 0, i, 2] >= 0.5)
-    
-    # Calculate count based on the attention module's findings rather than ssd_net
-    # This prevents the mismatch where ssd_net reports 1 face but pose detection finds 2+
-    count = attention["attentive"] + attention["distracted"]
-
-    # Encode image
-    _, buffer = cv2.imencode('.jpg', annotated_frame)
-    image_base64 = base64.b64encode(buffer).decode('utf-8')
-    
+    # Build payload - ALWAYS include image if available
     payload = {
-        "count": count,
-        "image": image_base64,
-        "attentive": attention["attentive"],
-        "distracted": attention["distracted"],
-        "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        "count": data["count"],
+        "attentive": data["attentive"],
+        "distracted": data["distracted"],
+        "timestamp": data["timestamp"]
     }
     
-    client.publish(TOPIC_HEADCOUNT, json.dumps(payload))
-    print(f"Headcount: {count} | Attentive: {attention['attentive']} Distracted: {attention['distracted']}")
+    # Always include image if we have one
+    if data["image"]:
+        payload["image"] = data["image"]
+    
+    async_publish(TOPIC_HEADCOUNT, payload)
+    print(f"Headcount: {data['count']} | Attentive: {data['attentive']} Distracted: {data['distracted']}")
 
-    # Check for attention alerts
-    if count > 0:
-        attention_rate = attention["attentive"] / count
+    # Check for attention alerts with rate limiting
+    if data["count"] > 0:
+        attention_rate = data["attentive"] / data["count"]
         if attention_rate < ATTENTION_THRESHOLD:
-            probs = calculate_blame_probabilities()
-            alert_payload = {
-                "attention_rate": round(attention_rate, 2),
-                "threshold": ATTENTION_THRESHOLD,
-                "probabilities": probs,
-                "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            }
-            client.publish("alerts/attention_alerts", json.dumps(alert_payload))
-            print(f"Alert: Attention dropped to {attention_rate:.2f}. Causes: {probs}")
+            now = time.time()
+            # Rate limit attention alerts
+            if now - last_alert_times.get("attention", 0) >= ALERT_COOLDOWN:
+                last_alert_times["attention"] = now
+                probs = calculate_blame_probabilities()
+                alert_payload = {
+                    "attention_rate": round(attention_rate, 2),
+                    "threshold": ATTENTION_THRESHOLD,
+                    "probabilities": probs,
+                    "timestamp": data["timestamp"]
+                }
+                async_publish("alerts/attention_alerts", alert_payload)
+                print(f"Alert: Attention dropped to {attention_rate:.2f}. Causes: {probs}")
+
 
 ############ for sound ################
 def publish_sound():
     if not HAS_SOUND:
         return None
+    
+    # Get the latest sound data from background thread (NOT calling get_sound() directly!)
+    with sound_data_lock:
+        sound_data = latest_sound_data.copy()
+    
     try:
-        payload = get_sound()
-        if payload is None:
-            raise RuntimeError("Sound data invalid")
+        payload = sound_data.copy()
+        
         # Convert all numeric values to Python floats
         for key in ["rms", "peak", "variance", "dBFS"]:
             if key in payload:
                 payload[key] = float(payload[key])
         
-        # If label is a numpy type, convert to string
         if "label" in payload:
             payload["label"] = str(payload["label"])
+        
+        # Add timestamp
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         payload["status"] = "ok"
+        payload["timestamp"] = timestamp
 
         LATEST_SENSORS["sound_label"] = payload.get("label", "quiet")
         LATEST_SENSORS["sound_dbfs"] = payload.get("dBFS", -50.0)
@@ -275,17 +474,28 @@ def publish_sound():
         
     except Exception as e:
         print(f"Sound sensor error: {e}")
-        payload = {"status": "error", "message": "Sound sensor not detected"}
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        payload = {
+            "status": "error",
+            "message": "Sound sensor not detected",
+            "timestamp": timestamp
+        }
     
-    client.publish(TOPIC_SOUND, json.dumps(payload))
+    async_publish(TOPIC_SOUND, payload)
     return payload
-
 
 # Main loop to publish data at intervals
 if __name__ == "__main__":
-    last_temp_time = 0
-    last_light_time = 0
-    last_sound_time = 0
+    # Wait for threads to initialize
+    print("Waiting for threads to initialize...")
+    time.sleep(2)
+    
+    # Initialize to current time so nothing fires immediately
+    start_time = time.time()
+    last_temp_time = start_time
+    last_light_time = start_time
+    last_sound_time = start_time
+    last_headcount_time = start_time
     
     try:
         while True:
@@ -293,25 +503,26 @@ if __name__ == "__main__":
             
             # Temperature every 5 seconds
             if HAS_TEMP and now - last_temp_time >= 5:
-                temp_result = publish_temperature()
-                print(f"Temperature: {temp_result}")
+                publish_temperature()
                 last_temp_time = now
             
             # Light every 5 seconds
             if HAS_LIGHT and now - last_light_time >= 5:
-                light_result = publish_light_status()
-                print(f"Light: {light_result}")
+                publish_light_status()
                 last_light_time = now
 
             # Sound every 1 second
             if HAS_SOUND and now - last_sound_time >= 1:
-                sound_results = publish_sound()
-                print(f"Sound: {sound_results}")
+                publish_sound()
                 last_sound_time = now
             
             # Headcount every 1 second
-            publish_headcount()
-            time.sleep(1)
+            if now - last_headcount_time >= 1:
+                publish_headcount()
+                last_headcount_time = now
+            
+            time.sleep(0.1)
             
     finally:
         camera.release()
+        print("Camera released")

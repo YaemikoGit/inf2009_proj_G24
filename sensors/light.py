@@ -7,7 +7,7 @@ GPIO.setup(SENSOR_PIN, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
 
 _last_value = None
 _last_change_time = time.time()
-_STALE_TIMEOUT = 10  # seconds without change = likely unplugged
+_STALE_TIMEOUT = 1800  # seconds without change = likely unplugged
 
 def get_light():
     global _last_value, _last_change_time
