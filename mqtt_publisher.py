@@ -167,56 +167,75 @@ def check_and_publish_sensor_alert(topic_suffix, sensor_type, is_bad, message_de
 def publish_temperature():
     if not HAS_TEMP:
         return None
-    try:
-        data = get_temperature()
-        
-        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        
-        payload = {
-            "status": "ok",
-            "temperature": float(data['temperature']),
-            "humidity": float(data['humidity']),
-            "timestamp": timestamp
-        }
-        
-        LATEST_SENSORS["temperature"] = payload["temperature"]
-        LATEST_SENSORS["humidity"] = payload["humidity"]
-        
-        temp_val = payload["temperature"]
-        hum_val = payload["humidity"]
-
-        is_temp_bad = temp_val < 20 or temp_val > 28
-        is_hum_bad = hum_val < 30 or hum_val > 70
-        is_bad = is_temp_bad or is_hum_bad
-        
-        msg_parts = []
-        if is_temp_bad:
-            if temp_val < 20:
-                msg_parts.append(f"Temperature too low ({temp_val}C)")
-            else:
-                msg_parts.append(f"Temperature too high ({temp_val}C)")
-                
-        if is_hum_bad:
-            if hum_val < 30:
-                msg_parts.append(f"Humidity too low ({hum_val}%)")
-            else:
-                msg_parts.append(f"Humidity too high ({hum_val}%)")
-
-        msg = " | ".join(msg_parts) if msg_parts else "Normal"
-        
-        check_and_publish_sensor_alert("temperature_alerts", "temperature", is_bad, msg)
-        
-    except Exception as e:
-        print(f"Temperature sensor error: {e}")
-        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        payload = {
-            "status": "error",
-            "message": "Temperature sensor not detected",
-            "timestamp": timestamp
-        }
     
-    async_publish(TOPIC_TEMP, payload)
-    return payload
+    # Try up to 3 times with delays
+    max_retries = 3
+    for attempt in range(max_retries):
+        try:
+            data = get_temperature()
+            
+            timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            
+            payload = {
+                "status": "ok",
+                "temperature": float(data['temperature']),
+                "humidity": float(data['humidity']),
+                "timestamp": timestamp
+            }
+            
+            LATEST_SENSORS["temperature"] = payload["temperature"]
+            LATEST_SENSORS["humidity"] = payload["humidity"]
+            
+            temp_val = payload["temperature"]
+            hum_val = payload["humidity"]
+
+            is_temp_bad = temp_val < 20 or temp_val > 28
+            is_hum_bad = hum_val < 30 or hum_val > 70
+            is_bad = is_temp_bad or is_hum_bad
+            
+            msg_parts = []
+            if is_temp_bad:
+                if temp_val < 20:
+                    msg_parts.append(f"Temperature too low ({temp_val}C)")
+                else:
+                    msg_parts.append(f"Temperature too high ({temp_val}C)")
+                    
+            if is_hum_bad:
+                if hum_val < 30:
+                    msg_parts.append(f"Humidity too low ({hum_val}%)")
+                else:
+                    msg_parts.append(f"Humidity too high ({hum_val}%)")
+
+            msg = " | ".join(msg_parts) if msg_parts else "Normal"
+            
+            check_and_publish_sensor_alert("temperature_alerts", "temperature", is_bad, msg)
+            
+            async_publish(TOPIC_TEMP, payload)
+            return payload  # Success! Exit retry loop
+            
+        except Exception as e:
+            if attempt < max_retries - 1:
+                # Not the last attempt, wait and retry
+                time.sleep(0.5)  # Wait 500ms before retry
+                continue
+            else:
+                # Last attempt failed
+                # Only print error once every 10 failures to reduce spam
+                if not hasattr(publish_temperature, 'error_count'):
+                    publish_temperature.error_count = 0
+                publish_temperature.error_count += 1
+                
+                if publish_temperature.error_count % 10 == 1:
+                    print(f"Temperature sensor error after {max_retries} attempts: {e}")
+                
+                timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                payload = {
+                    "status": "error",
+                    "message": "Temperature sensor not detected",
+                    "timestamp": timestamp
+                }
+                async_publish(TOPIC_TEMP, payload)
+                return payload
 
 ############ for light ################
 def publish_light_status():
@@ -497,12 +516,18 @@ if __name__ == "__main__":
     last_sound_time = start_time
     last_headcount_time = start_time
     
+    print("Starting sensor publisher...")
+    print(f"Temperature: {'ENABLED' if HAS_TEMP else 'DISABLED'}")
+    print(f"Light: {'ENABLED' if HAS_LIGHT else 'DISABLED'}")
+    print(f"Sound: {'ENABLED' if HAS_SOUND else 'DISABLED'}")
+    print(f"Camera: ENABLED")
+    
     try:
         while True:
             now = time.time()
             
-            # Temperature every 5 seconds
-            if HAS_TEMP and now - last_temp_time >= 5:
+            # Temperature every 10 seconds
+            if HAS_TEMP and now - last_temp_time >= 10:
                 publish_temperature()
                 last_temp_time = now
             

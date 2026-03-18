@@ -53,22 +53,16 @@ def on_message(client, userdata, message):
     
     ############ for camera ################
     elif message.topic == "sensors/headcount":
-        # Check if this is a new image (only send if changed)
-        has_new_image = payload.get("image") and payload.get("image") != latest_headcount.get("image")
-        
         latest_headcount = payload
         
-        # Build minimal payload
+        # Always send all data including image
         emit_data = {
             "count": payload.get("count"),
             "timestamp": payload.get("timestamp"),
             "attentive": payload.get("attentive", 0),
-            "distracted": payload.get("distracted", 0)
+            "distracted": payload.get("distracted", 0),
+            "image": payload.get("image")  # Always include, even if None
         }
-        
-        # Only send image when it actually changes
-        if has_new_image:
-            emit_data["image"] = payload.get("image")
         
         socketio.emit("headcount_update", emit_data)
 

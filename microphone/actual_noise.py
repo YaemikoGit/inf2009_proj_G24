@@ -2,6 +2,7 @@ import joblib
 from sklearn.tree import export_text
 
 import numpy as np
+import pandas as pd
 import sounddevice as sd
 import time
 import os
@@ -50,7 +51,12 @@ def get_sound():
         dBFS = 20 * np.log10(peak) if peak != 0 else -100
 
         # Make prediction
-        features = np.array([[rms, peak, variance, dBFS]])
+        #features = np.array([[rms, peak, variance, dBFS]])
+        #label = model.predict(features)[0]
+
+        # Make prediction
+        features = pd.DataFrame([[rms, peak, variance, dBFS]], 
+                               columns=['rms', 'peak', 'variance', 'dBFS'])
         label = model.predict(features)[0]
 
         # # Print result
