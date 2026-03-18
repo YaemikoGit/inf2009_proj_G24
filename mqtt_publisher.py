@@ -5,7 +5,7 @@ from datetime import datetime
 import json
 import base64
 import cv2
-from camera.headcount import detect_faces_and_pose, camera
+from camera.headcount import detect_faces_and_pose, get_camera
 from collections import deque
 import threading
 
@@ -118,7 +118,7 @@ def on_message(client, userdata, message):
             print("Failed to parse threshold", e)
 
 client.on_message = on_message
-client.connect("10.179.208.202", 1883)
+client.connect("172.20.10.12", 1883)
 client.subscribe("settings/attention_threshold")
 client.loop_start()
 
@@ -145,6 +145,7 @@ publisher_thread.start()
 
 def async_publish(topic, payload):
     """Add message to queue for async publishing"""
+
     with publish_lock:
         publish_queue.append((topic, json.dumps(payload)))
 
@@ -349,6 +350,11 @@ def camera_processing_thread():
     """Dedicated thread for camera processing - runs independently"""
     global latest_camera_data, last_encoded_image
     
+    cam = get_camera()  
+    if cam is None:
+        print("Failed to initialize camera")
+        return
+    
     frame_count = 0
     last_image_encode_time = 0
     IMAGE_ENCODE_INTERVAL = 1  # Encode image every 1 second
@@ -357,9 +363,18 @@ def camera_processing_thread():
     
     while True:
         try:
-            success, frame = camera.read()
+            if not cam.isOpened():
+                print("Camera disconnected, reconnecting...")
+                cam = get_camera()
+                if cam is None:
+                    time.sleep(1)
+                    continue
+
+            success, frame = cam.read()
             if not success:
                 print("Camera read failed")
+                cam.release()
+                cam = get_camera()
                 time.sleep(0.1)
                 continue
             
@@ -549,5 +564,4 @@ if __name__ == "__main__":
             time.sleep(0.1)
             
     finally:
-        camera.release()
         print("Camera released")

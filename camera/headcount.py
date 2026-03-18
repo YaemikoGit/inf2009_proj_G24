@@ -1,6 +1,8 @@
 import cv2
 import numpy as np
 import os
+import glob
+import time
 #import mediapipe as mp
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -20,8 +22,26 @@ facemark = cv2.face.createFacemarkLBF()
 LBF_path = os.path.join(BASE_DIR, "models", "lbfmodel.yaml")
 facemark.loadModel(LBF_path)
 
-camera = cv2.VideoCapture(0)
+camera = None
 
+def find_working_camera():
+    for dev in glob.glob('/dev/video*'):
+        cap = cv2.VideoCapture(dev)
+        if cap.isOpened():
+            print(f"Camera found at {dev}")
+            return cap
+        cap.release()
+    return None
+
+def get_camera():
+    global camera
+    if camera is None or not camera.isOpened():
+        print("Camera disconnected. Scanning for new camera...")
+        camera = find_working_camera()
+        if camera is None:
+            time.sleep(1)  # give the USB a moment to initialize
+    return camera
+    
 frame_counter = 0
 
 # Smoothing buffers for pitch and yaw
@@ -173,11 +193,20 @@ def detect_faces_and_pose(frame, return_attention=False):
 
 # FUnction to generate the frames
 def generate_frames():
+    global camera 
     while True:
         try:
+            if camera is None or not camera.isOpened():
+                camera = get_camera()
+                if camera is None: 
+                    continue
+                
             success, frame = camera.read()
             if not success:
-                break
+                print("Camera read failed")
+                camera.release()
+                camera = None
+                continue
 
             frame = detect_faces_and_pose(frame)  # unchanged
 
