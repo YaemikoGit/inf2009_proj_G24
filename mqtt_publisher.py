@@ -90,6 +90,10 @@ SOUND_TIMEOUT = 3               # seconds before we consider it disconnected
 
 sound_data_lock = threading.Lock()
 
+# camera timeout
+last_camera_time = time.time()
+CAMERA_TIMEOUT = 3   # seconds
+
 ############ SOUND PROCESSING THREAD ################
 def sound_processing_thread():
     """Dedicated thread for sound processing - runs independently"""
@@ -360,12 +364,15 @@ last_encoded_image_lock = threading.Lock()
 
 def camera_processing_thread():
     """Dedicated thread for camera processing - runs independently"""
-    global latest_camera_data, last_encoded_image
+    global latest_camera_data, last_encoded_image, last_camera_time
     
-    cam = get_camera()  
-    if cam is None:
-        print("Failed to initialize camera")
-        return
+    cam = None
+
+    while cam is None:
+        print("Trying to initialize camera...")
+        cam = get_camera()
+        if cam is None:
+            time.sleep(1)
     
     frame_count = 0
     last_image_encode_time = 0
@@ -375,25 +382,33 @@ def camera_processing_thread():
     
     while True:
         try:
-            if not cam.isOpened():
+            if cam is None or not cam.isOpened():
                 print("Camera disconnected, reconnecting...")
                 cam = get_camera()
                 if cam is None:
                     time.sleep(1)
                     continue
+                else:
+                    last_camera_time = time.time()
+                    continue
 
             success, frame = cam.read()
             if not success:
                 print("Camera read failed")
-                cam.release()
+                last_camera_time = 0 
+                if cam is not None: 
+                    cam.release()
                 cam = get_camera()
-                time.sleep(0.1)
-                continue
+                if cam is None:
+                    time.sleep(1)
+                    continue
+
+            last_camera_time = time.time()
 
             frame_count += 1
-            if frame_count % 3 != 0:  # only process every 3rd frame
+            if frame_count % 3 != 0:
                 continue
-            
+ 
             # Always process for headcount/attention
             annotated_frame, attention = detect_faces_and_pose(frame, return_attention=True)
             count = attention["attentive"] + attention["distracted"]
@@ -431,9 +446,7 @@ def camera_processing_thread():
                     "image": current_image,
                     "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 }
-            
-            frame_count += 1
-            
+                        
             # Small delay to prevent maxing out CPU
             # time.sleep(0.05)  # ~20 FPS processing
             
@@ -449,6 +462,21 @@ camera_thread.start()
 def publish_headcount():
     """Just publish the latest camera data - no processing here"""
     global last_alert_times, last_nonzero_camera_data, last_nonzero_time
+
+    # ! for error handling
+    # Detect camera disconnect
+    if time.time() - last_camera_time > CAMERA_TIMEOUT:
+        print("=======================")
+        print(time.time() - last_camera_time > CAMERA_TIMEOUT)
+        print("========================")
+
+        payload = {
+            "status": "error",
+            "message": "Camera not available",
+            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        }
+        async_publish(TOPIC_HEADCOUNT, payload)
+        return payload
     
     # Get the latest processed data
     with camera_data_lock:

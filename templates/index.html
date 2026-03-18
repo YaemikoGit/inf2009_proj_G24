@@ -357,6 +357,21 @@
             }
         });
 
+        socket.on("headcount_error", (data) => {
+            const placeholder = document.getElementById("no-image-placeholder");
+            const img = document.getElementById("snapshot");
+
+            if (img) img.style.display = "none";
+            if (placeholder) {
+                placeholder.style.display = "flex";
+                placeholder.textContent = "❌ " + (data.message || "Camera not available");
+            }
+
+            document.getElementById("attention-time").textContent = data.timestamp || "";
+            document.getElementById("attentive-value").textContent = "--";
+            document.getElementById("distracted-value").textContent = "--";
+        });
+
         socket.on("sound_update", (data) => {
             const value = document.getElementById("sound-value");
             const status = document.getElementById("sound-status");

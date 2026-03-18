@@ -54,17 +54,21 @@ def on_message(client, userdata, message):
     ############ for camera ################
     elif message.topic == "sensors/headcount":
         latest_headcount = payload
+
+        if payload.get("status") == "error":
+            # handle error message 
+            socketio.emit("headcount_error", payload)
+        else:
+            # Always send all data including image
+            emit_data = {
+                "count": payload.get("count"),
+                "timestamp": payload.get("timestamp"),
+                "attentive": payload.get("attentive", 0),
+                "distracted": payload.get("distracted", 0),
+                "image": payload.get("image")  # Always include, even if None
+            }
         
-        # Always send all data including image
-        emit_data = {
-            "count": payload.get("count"),
-            "timestamp": payload.get("timestamp"),
-            "attentive": payload.get("attentive", 0),
-            "distracted": payload.get("distracted", 0),
-            "image": payload.get("image")  # Always include, even if None
-        }
-        
-        socketio.emit("headcount_update", emit_data)
+            socketio.emit("headcount_update", emit_data)
 
     ############ for sound ################
     elif message.topic == "sensors/sound":
