@@ -84,12 +84,16 @@ latest_sound_data = {
     "dBFS": -50,
     "label": "quiet"
 }
+
+last_sound_time = time.time()   
+SOUND_TIMEOUT = 3               # seconds before we consider it disconnected
+
 sound_data_lock = threading.Lock()
 
 ############ SOUND PROCESSING THREAD ################
 def sound_processing_thread():
     """Dedicated thread for sound processing - runs independently"""
-    global latest_sound_data
+    global latest_sound_data, last_sound_time
     
     print("Sound thread started!")
     
@@ -102,6 +106,7 @@ def sound_processing_thread():
                     # Update shared data
                     with sound_data_lock:
                         latest_sound_data = sound_data
+                    last_sound_time = time.time()  
             
             time.sleep(1)  # Sample sound every 1 second
             
@@ -503,6 +508,18 @@ def publish_headcount():
 
 ############ for sound ################
 def publish_sound():
+
+    # Detect if sound sensor is stale (likely unplugged)
+    if time.time() - last_sound_time > SOUND_TIMEOUT:
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        payload = {
+            "status": "error",
+            "message": "Sound sensor disconnected",
+            "timestamp": timestamp
+        }
+        async_publish(TOPIC_SOUND, payload)
+        return payload
+
     if not HAS_SOUND:
         return None
     
@@ -557,7 +574,7 @@ if __name__ == "__main__":
     start_time = time.time()
     last_temp_time = start_time
     last_light_time = start_time
-    last_sound_time = start_time
+    last_sound_publish_time = start_time
     last_headcount_time = start_time
     
     print("Starting sensor publisher...")
@@ -581,9 +598,9 @@ if __name__ == "__main__":
                 last_light_time = now
 
             # Sound every 1 second
-            if HAS_SOUND and now - last_sound_time >= 1:
+            if HAS_SOUND and now - last_sound_publish_time >= 1:
                 publish_sound()
-                last_sound_time = now
+                last_sound_publish_time = now
             
             # Headcount every 1 second
             if now - last_headcount_time >= 1:
