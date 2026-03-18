@@ -69,6 +69,13 @@ latest_camera_data = {
 }
 camera_data_lock = threading.Lock()
 
+# ! added 
+# After camera_data_lock line
+last_nonzero_camera_data = None
+last_nonzero_time = 0
+NONZERO_HOLD_DURATION = 3  # seconds to hold last known count
+# !stop here
+
 # Sound data buffer
 latest_sound_data = {
     "rms": 0,
@@ -377,6 +384,10 @@ def camera_processing_thread():
                 cam = get_camera()
                 time.sleep(0.1)
                 continue
+
+            frame_count += 1
+            if frame_count % 3 != 0:  # only process every 3rd frame
+                continue
             
             # Always process for headcount/attention
             annotated_frame, attention = detect_faces_and_pose(frame, return_attention=True)
@@ -419,7 +430,7 @@ def camera_processing_thread():
             frame_count += 1
             
             # Small delay to prevent maxing out CPU
-            time.sleep(0.05)  # ~20 FPS processing
+            # time.sleep(0.05)  # ~20 FPS processing
             
         except Exception as e:
             print(f"Camera processing error: {e}")
@@ -432,11 +443,29 @@ camera_thread.start()
 ############ for camera ################
 def publish_headcount():
     """Just publish the latest camera data - no processing here"""
-    global last_alert_times
+    global last_alert_times, last_nonzero_camera_data, last_nonzero_time
     
     # Get the latest processed data
     with camera_data_lock:
         data = latest_camera_data.copy()
+
+    # !added 
+    # Skip if never received any data yet
+    if data["timestamp"] is None:
+        return
+
+    now = time.time()
+
+    # If we have a real detection, update last known good
+    if data["count"] > 0:
+        last_nonzero_camera_data = data
+        last_nonzero_time = now
+
+    # If count is 0 but we had a recent detection, use that instead
+    if data["count"] == 0 and last_nonzero_camera_data is not None:
+        if now - last_nonzero_time < NONZERO_HOLD_DURATION:
+            data = last_nonzero_camera_data
+    # ! stop here
     
     # Build payload - ALWAYS include image if available
     payload = {
