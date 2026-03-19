@@ -90,7 +90,7 @@ def on_message(client, userdata, message):
 
 mqtt_client = mqtt.Client("Subscriber")
 mqtt_client.on_message = on_message
-mqtt_client.connect("172.20.10.12", 1883)
+mqtt_client.connect("192.168.137.42", 1883)       # TO CHANGE IF NEEDED
 mqtt_client.subscribe("sensors/temperature")
 mqtt_client.subscribe("sensors/light")
 mqtt_client.subscribe("sensors/headcount")
