@@ -236,10 +236,16 @@
             <!-- Temperature & Humidity Card -->
             <div class="card">
                 <h2>🌡️ Temperature & Humidity</h2>
-                <div class="value ok" id="temp-value">-- °C</div>
-                <div class="value ok" id="hum-value">-- %</div>
-                <span class="badge ok" id="temp-status">waiting</span>
-                <p class="timestamp" id="temp-time">Never</p>
+                {% if temperature.status == 'ok' %}
+                <div class="value ok" id="temp-value">{{ temperature.temperature }} °C</div>
+                <div class="value ok" id="hum-value">{{ temperature.humidity }} %</div>
+                <span class="badge ok" id="temp-status">{{ temperature.status }}</span>
+                {% else %}
+                <div class="value error" id="temp-value">Sensor Not Detected</div>
+                <div class="value error" id="hum-value">--</div>
+                <span class="badge error" id="temp-status">{{ temperature.status or 'error' }}</span>
+                {% endif %}
+                <p class="timestamp" id="temp-time">{{ temperature.timestamp or 'Never' }}</p>
             </div>
 
             <!-- Sound Card -->

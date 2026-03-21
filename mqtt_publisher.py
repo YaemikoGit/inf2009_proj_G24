@@ -8,6 +8,8 @@ import cv2
 from camera.headcount import detect_faces_and_pose, get_camera
 from collections import deque
 import threading
+import signal
+import numpy as np
 
 try:
     from sensors.light import get_light
@@ -46,6 +48,18 @@ LATEST_SENSORS = {
     "sound_dbfs": -50.0
 }
 
+# Performance tracking
+performance_log = {
+    "frame_capture": [],
+    "detection_output": [],
+    "dashboard_update": [],
+    "sensor_polling": {
+        "temperature": [],
+        "light": [],
+        "sound": []
+    }
+}
+
 # Alert rate limiting
 last_alert_times = {
     "temperature": 0,
@@ -65,16 +79,16 @@ latest_camera_data = {
     "attentive": 0,
     "distracted": 0,
     "image": None,
-    "timestamp": None
+    "timestamp": None,
+    "ts_capture": None,
+    "ts_detection": None
 }
 camera_data_lock = threading.Lock()
 
-# ! added 
 # After camera_data_lock line
 last_nonzero_camera_data = None
 last_nonzero_time = 0
 NONZERO_HOLD_DURATION = 3  # seconds to hold last known count
-# !stop here
 
 # Sound data buffer
 latest_sound_data = {
@@ -104,13 +118,23 @@ def sound_processing_thread():
     while True:
         try:
             if HAS_SOUND:
+                ts_start = time.perf_counter()
                 sound_data = get_sound()
+                ts_end = time.perf_counter()
                 
                 if sound_data:
                     # Update shared data
                     with sound_data_lock:
                         latest_sound_data = sound_data
-                    last_sound_time = time.time()  
+                    last_sound_time = time.time()
+                    
+                    # Log performance
+                    poll_latency = (ts_end - ts_start) * 1000
+                    performance_log["sensor_polling"]["sound"].append({
+                        "start": ts_start,
+                        "end": ts_end,
+                        "latency_ms": poll_latency
+                    })
             
             time.sleep(1)  # Sample sound every 1 second
             
@@ -134,7 +158,7 @@ def on_message(client, userdata, message):
             print("Failed to parse threshold", e)
 
 client.on_message = on_message
-client.connect("192.168.137.42", 1883)                # TO CHANGE IF NEEDED
+client.connect("10.179.208.202", 1883) #CHANGE IP HERE
 client.subscribe("settings/attention_threshold")
 client.loop_start()
 
@@ -161,10 +185,9 @@ publisher_thread.start()
 
 def async_publish(topic, payload):
     """Add message to queue for async publishing"""
-
     with publish_lock:
         publish_queue.append((topic, json.dumps(payload)))
-
+        
 def check_and_publish_sensor_alert(topic_suffix, sensor_type, is_bad, message_detail):
     if is_bad:
         # Rate limit alerts
@@ -185,11 +208,24 @@ def publish_temperature():
     if not HAS_TEMP:
         return None
     
+    # TIMESTAMP: Start sensor polling
+    ts_poll_start = time.perf_counter()
+    
     # Try up to 3 times with delays
     max_retries = 3
     for attempt in range(max_retries):
         try:
             data = get_temperature()
+            
+            # TIMESTAMP: Sensor response received
+            ts_poll_end = time.perf_counter()
+            poll_latency = (ts_poll_end - ts_poll_start) * 1000
+            
+            performance_log["sensor_polling"]["temperature"].append({
+                "start": ts_poll_start,
+                "end": ts_poll_end,
+                "latency_ms": poll_latency
+            })
             
             timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             
@@ -228,16 +264,14 @@ def publish_temperature():
             check_and_publish_sensor_alert("temperature_alerts", "temperature", is_bad, msg)
             
             async_publish(TOPIC_TEMP, payload)
-            return payload  # Success! Exit retry loop
+            print(f"Temperature: {temp_val}C | Polling: {poll_latency:.2f}ms")
+            return payload
             
         except Exception as e:
             if attempt < max_retries - 1:
-                # Not the last attempt, wait and retry
-                time.sleep(0.5)  # Wait 500ms before retry
+                time.sleep(0.5)
                 continue
             else:
-                # Last attempt failed
-                # Only print error once every 10 failures to reduce spam
                 if not hasattr(publish_temperature, 'error_count'):
                     publish_temperature.error_count = 0
                 publish_temperature.error_count += 1
@@ -258,8 +292,23 @@ def publish_temperature():
 def publish_light_status():
     if not HAS_LIGHT:
         return None
+    
+    # TIMESTAMP: Start sensor polling
+    ts_poll_start = time.perf_counter()
+    
     try:
         light_status = get_light()
+        
+        # TIMESTAMP: Sensor response received
+        ts_poll_end = time.perf_counter()
+        poll_latency = (ts_poll_end - ts_poll_start) * 1000
+        
+        performance_log["sensor_polling"]["light"].append({
+            "start": ts_poll_start,
+            "end": ts_poll_end,
+            "latency_ms": poll_latency
+        })
+        
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         
         payload = {
@@ -283,7 +332,7 @@ def publish_light_status():
     
     async_publish(TOPIC_LIGHT, payload)
     return payload
-    
+
 # Cache the blame probabilities calculation
 blame_cache = None
 blame_cache_time = 0
@@ -352,7 +401,7 @@ def calculate_blame_probabilities():
             "sound_prob": round(sound_dist/total, 2),
             "others_prob": round(others_dist/total, 2)
         }
-    
+
     # Update cache
     blame_cache = result
     blame_cache_time = now
@@ -378,8 +427,12 @@ def camera_processing_thread():
     last_image_encode_time = 0
     IMAGE_ENCODE_INTERVAL = 1  # Encode image every 1 second
     
-    print("Camera thread started!")
+    # FPS tracking
+    fps_start_time = time.time()
+    fps_frame_count = 0
     
+    print("Camera thread started!")
+
     while True:
         try:
             if cam is None or not cam.isOpened():
@@ -392,6 +445,9 @@ def camera_processing_thread():
                     last_camera_time = time.time()
                     continue
 
+            # TIMESTAMP: Frame capture
+            ts_capture = time.perf_counter()
+            
             success, frame = cam.read()
             if not success:
                 print("Camera read failed")
@@ -406,6 +462,8 @@ def camera_processing_thread():
             last_camera_time = time.time()
 
             frame_count += 1
+            fps_frame_count += 1
+            
             if frame_count % 3 != 0:
                 continue
  
@@ -413,6 +471,17 @@ def camera_processing_thread():
             annotated_frame, attention = detect_faces_and_pose(frame, return_attention=True)
             count = attention["attentive"] + attention["distracted"]
             
+            # TIMESTAMP: Detection output
+            ts_detection = time.perf_counter()
+            
+            # Calculate FPS every 30 frames
+            if fps_frame_count >= 30:
+                elapsed = time.time() - fps_start_time
+                fps = fps_frame_count / elapsed
+                print(f"Camera FPS: {fps:.2f}")
+                fps_start_time = time.time()
+                fps_frame_count = 0
+    
             # Only encode image if faces are detected
             now = time.time()
             if count > 0 and now - last_image_encode_time >= IMAGE_ENCODE_INTERVAL:
@@ -433,6 +502,11 @@ def camera_processing_thread():
                 
                 last_image_encode_time = now
             
+            # Log performance
+            detection_latency = (ts_detection - ts_capture) * 1000
+            performance_log["frame_capture"].append(ts_capture)
+            performance_log["detection_output"].append(ts_detection)
+            
             # Update shared data
             with camera_data_lock:
                 with last_encoded_image_lock:
@@ -444,11 +518,10 @@ def camera_processing_thread():
                     "attentive": attention["attentive"],
                     "distracted": attention["distracted"],
                     "image": current_image,
-                    "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                    "ts_capture": ts_capture,
+                    "ts_detection": ts_detection
                 }
-                        
-            # Small delay to prevent maxing out CPU
-            # time.sleep(0.05)  # ~20 FPS processing
             
         except Exception as e:
             print(f"Camera processing error: {e}")
@@ -463,13 +536,8 @@ def publish_headcount():
     """Just publish the latest camera data - no processing here"""
     global last_alert_times, last_nonzero_camera_data, last_nonzero_time
 
-    # ! for error handling
     # Detect camera disconnect
     if time.time() - last_camera_time > CAMERA_TIMEOUT:
-        print("=======================")
-        print(time.time() - last_camera_time > CAMERA_TIMEOUT)
-        print("========================")
-
         payload = {
             "status": "error",
             "message": "Camera not available",
@@ -482,7 +550,6 @@ def publish_headcount():
     with camera_data_lock:
         data = latest_camera_data.copy()
 
-    # !added 
     # Skip if never received any data yet
     if data["timestamp"] is None:
         return
@@ -498,8 +565,10 @@ def publish_headcount():
     if data["count"] == 0 and last_nonzero_camera_data is not None:
         if now - last_nonzero_time < NONZERO_HOLD_DURATION:
             data = last_nonzero_camera_data
-    # ! stop here
     
+    # TIMESTAMP: Dashboard update (MQTT publish)
+    ts_publish = time.perf_counter()
+
     # Build payload - ALWAYS include image if available
     payload = {
         "count": data["count"],
@@ -513,7 +582,18 @@ def publish_headcount():
         payload["image"] = data["image"]
     
     async_publish(TOPIC_HEADCOUNT, payload)
-    print(f"Headcount: {data['count']} | Attentive: {data['attentive']} Distracted: {data['distracted']}")
+    
+    # Calculate end-to-end latency
+    if "ts_capture" in data and data["ts_capture"]:
+        e2e_latency = (ts_publish - data["ts_capture"]) * 1000
+        inference_latency = (data["ts_detection"] - data["ts_capture"]) * 1000
+        publish_latency = (ts_publish - data["ts_detection"]) * 1000
+        
+        performance_log["dashboard_update"].append(ts_publish)
+        
+        print(f"Headcount: {data['count']} | Inference: {inference_latency:.2f}ms | Publish: {publish_latency:.2f}ms | E2E: {e2e_latency:.2f}ms")
+    else:
+        print(f"Headcount: {data['count']} | Attentive: {data['attentive']} Distracted: {data['distracted']}")
 
     # Check for attention alerts with rate limiting
     if data["count"] > 0:
@@ -536,7 +616,6 @@ def publish_headcount():
 
 ############ for sound ################
 def publish_sound():
-
     # Detect if sound sensor is stale (likely unplugged)
     if time.time() - last_sound_time > SOUND_TIMEOUT:
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -551,7 +630,7 @@ def publish_sound():
     if not HAS_SOUND:
         return None
     
-    # Get the latest sound data from background thread (NOT calling get_sound() directly!)
+    # Get the latest sound data from background thread
     with sound_data_lock:
         sound_data = latest_sound_data.copy()
     
@@ -592,8 +671,80 @@ def publish_sound():
     async_publish(TOPIC_SOUND, payload)
     return payload
 
+
+# Performance report function
+def generate_performance_report(signum, frame):
+    """Generate final performance report on exit"""
+    print("\n\n" + "="*60)
+    print("PERFORMANCE MEASUREMENT REPORT")
+    print("="*60)
+    
+    # 1. Inference Latency (from detection_output logs)
+    print("\n1. FACE DETECTION LATENCY")
+    if performance_log["frame_capture"] and performance_log["detection_output"]:
+        inference_latencies = []
+        min_len = min(len(performance_log["frame_capture"]), len(performance_log["detection_output"]))
+        for i in range(min_len):
+            latency = (performance_log["detection_output"][i] - performance_log["frame_capture"][i]) * 1000
+            if latency < 500:  # Reasonable inference time
+                inference_latencies.append(latency)
+        
+        if inference_latencies:
+            print(f"   Samples: {len(inference_latencies)}")
+            print(f"   Average: {np.mean(inference_latencies):.2f}ms")
+            print(f"   p50: {np.percentile(inference_latencies, 50):.2f}ms")
+            print(f"   p95: {np.percentile(inference_latencies, 95):.2f}ms")
+            print(f"   p99: {np.percentile(inference_latencies, 99):.2f}ms")
+        else:
+            print("   No inference samples collected")
+    
+    # 2. Publishing Latency (from dashboard_update logs)
+    print("\n2. PUBLISHING LATENCY (Detection to Dashboard)")
+    if performance_log["detection_output"] and performance_log["dashboard_update"]:
+        publish_latencies = []
+        min_len = min(len(performance_log["detection_output"]), len(performance_log["dashboard_update"]))
+        for i in range(min_len):
+            latency = (performance_log["dashboard_update"][i] - performance_log["detection_output"][i]) * 1000
+            if 0 < latency < 500:  # Reasonable publish time
+                publish_latencies.append(latency)
+        
+        if publish_latencies:
+            print(f"   Samples: {len(publish_latencies)}")
+            print(f"   Average: {np.mean(publish_latencies):.2f}ms")
+            print(f"   p50: {np.percentile(publish_latencies, 50):.2f}ms")
+            print(f"   p95: {np.percentile(publish_latencies, 95):.2f}ms")
+            print(f"   p99: {np.percentile(publish_latencies, 99):.2f}ms")
+
+    # 3. Sensor Polling Latency
+    print("\n3. SENSOR POLLING LATENCY")
+    for sensor, data in performance_log["sensor_polling"].items():
+        if data:
+            latencies = [d["latency_ms"] for d in data]
+            print(f"   {sensor.capitalize()}:")
+            print(f"     Samples: {len(latencies)}")
+            print(f"     Average: {np.mean(latencies):.2f}ms")
+            print(f"     p95: {np.percentile(latencies, 95):.2f}ms")
+            print(f"     p99: {np.percentile(latencies, 99):.2f}ms")
+    
+    # 4. Processing Rates
+    print("\n4. PROCESSING RATES")
+    print(f"   Total frames captured: {len(performance_log['frame_capture'])}")
+    print(f"   Total detections: {len(performance_log['detection_output'])}")
+    print(f"   Total dashboard updates: {len(performance_log['dashboard_update'])}")
+    if len(performance_log['detection_output']) > 0:
+        detection_rate = len(performance_log['dashboard_update']) / len(performance_log['detection_output']) * 100
+        print(f"   Publish rate (faces detected): {detection_rate:.1f}%")
+    
+    print("\n" + "="*60)
+    print("Report complete. Exiting...")
+    exit(0)
+
+
 # Main loop to publish data at intervals
 if __name__ == "__main__":
+    # Register signal handler for Ctrl+C
+    signal.signal(signal.SIGINT, generate_performance_report)
+    
     # Wait for threads to initialize
     print("Waiting for threads to initialize...")
     time.sleep(2)
@@ -610,11 +761,12 @@ if __name__ == "__main__":
     print(f"Light: {'ENABLED' if HAS_LIGHT else 'DISABLED'}")
     print(f"Sound: {'ENABLED' if HAS_SOUND else 'DISABLED'}")
     print(f"Camera: ENABLED")
+    print("\nPress Ctrl+C to stop and generate performance report\n")
     
     try:
         while True:
             now = time.time()
-            
+
             # Temperature every 10 seconds
             if HAS_TEMP and now - last_temp_time >= 10:
                 publish_temperature()
