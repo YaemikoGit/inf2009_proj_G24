@@ -158,7 +158,7 @@ def on_message(client, userdata, message):
             print("Failed to parse threshold", e)
 
 client.on_message = on_message
-client.connect("10.179.208.202", 1883) #CHANGE IP HERE
+client.connect("192.168.137.42", 1883) #CHANGE IP HERE
 client.subscribe("settings/attention_threshold")
 client.loop_start()
 
