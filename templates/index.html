@@ -152,14 +152,29 @@
 <body>
     <h1>🏫 Classroom Analytics</h1>
 
-    <!-- Top Alerts Panel -->
-    <div style="max-width: 1200px; margin: 0 auto 24px auto;">
-        <div class="card" style="text-align: left;">
+    <!-- Top Alerts & Recording Panel -->
+    <div style="max-width: 1200px; margin: 0 auto 24px auto; display: flex; justify-content: space-between; align-items: flex-end;">
+        <div class="card" style="text-align: left; flex: 1; margin-right: 20px;">
             <h2>⚠️ Active Alerts</h2>
             <ul id="alerts-list" style="margin-top: 10px; max-height: 150px; overflow-y: auto; list-style:none; font-size: 0.9em; padding-right: 5px;">
             </ul>
         </div>
+        
+        <div style="display: flex; flex-direction: column; gap: 10px; align-items: flex-end;">
+            <div style="display: flex; align-items: center;">
+                <span id="recording-indicator" style="display: none; color: #dc2626; font-weight: bold; margin-right: 15px; animation: blinker 1.5s linear infinite;">🔴 RECORDING</span>
+                <button id="record-btn" onclick="toggleRecording()" style="padding: 12px 24px; font-size: 1em; font-weight: bold; cursor: pointer; border-radius: 8px; border: none; background: #22c55e; color: white; transition: background 0.2s;">▶ Start Session</button>
+            </div>
+            <!-- Added placeholder link for phase 2 -->
+            <a href="/logs" style="padding: 12px 24px; text-decoration: none; color: white; background: #3b82f6; border-radius: 8px; font-weight: bold; text-align: center; width: 100%;">📊 View Session Logs</a>
+        </div>
     </div>
+
+    <style>
+    @keyframes blinker {
+        50% { opacity: 0; }
+    }
+    </style>
 
     <div class="dashboard">
 
@@ -245,6 +260,28 @@
 
     <script>
         const socket = io();
+        let isRecording = false;
+
+        function toggleRecording() {
+            const action = isRecording ? "stop" : "start";
+            socket.emit("toggle_recording", { action: action });
+        }
+
+        socket.on("recording_status", (data) => {
+            const btn = document.getElementById("record-btn");
+            const indicator = document.getElementById("recording-indicator");
+            if (data.status === "recording") {
+                isRecording = true;
+                btn.innerHTML = "⏹ Stop Session";
+                btn.style.background = "#dc2626";
+                indicator.style.display = "inline";
+            } else {
+                isRecording = false;
+                btn.innerHTML = "▶ Start Session";
+                btn.style.background = "#22c55e";
+                indicator.style.display = "none";
+            }
+        });
 
         function updateDisplay() {
             const val = document.getElementById("threshold-slider").value;
