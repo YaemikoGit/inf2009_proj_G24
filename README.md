@@ -15,8 +15,7 @@ This project proposes an edge-based classroom environment analytics system that 
 ## Technologies Used
 * **Language:** Python, JavaScript
 * **UI:** HTML, BootStrap 
-* **Backend & Database:** Neon Postgres (TBC)
-* **Build System:** Flask
+* **Build System:** Flask, MQTT
 
 
 ## Contributors of Group 24
