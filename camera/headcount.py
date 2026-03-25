@@ -263,12 +263,11 @@ def get_camera():
 
 
 model_points = np.array([
-    (0.0,    0.0,    0.0),      # Nose tip
-    (0.0,  -105.0,  -20.0),     # Chin   (raised slightly)
-    (-68.0,  58.0,  -45.0),     # Left eye  (moved inward + down)
-    (68.0,   58.0,  -45.0),     # Right eye (moved inward + down)
-    (-55.0, -42.0,  -40.0),     # Left mouth corner 
-    (55.0,  -42.0,  -40.0)      # Right mouth corner
+    (0.0,    0.0,     0.0),      # Nose tip
+    (-35.0,  40.0,   -30.0),     # Left eye
+    (35.0,   40.0,   -30.0),     # Right eye
+    (-30.0, -35.0,   -25.0),     # Left mouth corner
+    (30.0,  -35.0,   -25.0)      # Right mouth corner
 ], dtype="double")
 
 center_yaw = None
@@ -314,8 +313,14 @@ def get_pose_values(frame):
                 lm[:, 1] *= h
 
             left_eye, right_eye, nose, left_mouth, right_mouth = lm
-            chin = np.array([x + w_box / 2.0, y + h_box])
-            image_points = np.array([nose, chin, left_eye, right_eye, left_mouth, right_mouth], dtype="double")
+            # chin = np.array([x + w_box / 2.0, y + h_box])
+            image_points = np.array([
+                nose,
+                left_eye,
+                right_eye,
+                left_mouth,
+                right_mouth
+            ], dtype="double")
             focal_length = w
             center = (w / 2, h / 2)
             camera_matrix = np.array([[focal_length, 0, center[0]],[0, focal_length, center[1]],[0,0,1]], dtype="double")
