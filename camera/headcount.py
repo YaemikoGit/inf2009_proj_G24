@@ -260,6 +260,16 @@ def get_camera():
     return camera
 
 
+
+model_points = np.array([
+    (0.0, 0.0, 0.0),             # 1. Nose tip
+    (0.0, -330.0, -65.0),        # 2. Chin
+    (-225.0, 170.0, -135.0),     # 3. Left Eye
+    (225.0, 170.0, -135.0),      # 4. Right Eye
+    (-150.0, -150.0, -125.0),    # 5. Left Mouth corner
+    (150.0, -150.0, -125.0)      # 6. Right Mouth corner
+], dtype="double")
+
 center_yaw = 0.0
 center_pitch = 0.0
 CENTERS_FILE = os.path.join(BASE_DIR, "pose_centers.json")
@@ -283,6 +293,7 @@ def save_centers(yaw_val, pitch_val):
             print(f"Saved centers yaw={yaw_val:.2f} pitch={pitch_val:.2f}")
     except Exception as e:
         print("Failed to save centers:", e)
+
 
 # simple helper to extract yaw/pitch for the first detected face in a frame
 def get_pose_values(frame):
@@ -368,73 +379,52 @@ def get_smoothed_yaw(new_val):
     return sum(yaw_history) / len(yaw_history)
 
 def detect_faces_and_pose(frame, return_attention=False):
+    global center_yaw, center_pitch
     h, w = frame.shape[:2]
     headcount = 0
     attentive = 0
     distracted = 0
 
-    # 3D Model Points (6 points to satisfy DLT algorithm)
-    # Coordinates in mm: (x, y, z)
-    model_points = np.array([
-        (0.0, 0.0, 0.0),             # 1. Nose tip
-        (0.0, -330.0, -65.0),        # 2. Chin (Synthetic)
-        (-225.0, 170.0, -135.0),     # 3. Left Eye
-        (225.0, 170.0, -135.0),      # 4. Right Eye
-        (-150.0, -150.0, -125.0),    # 5. Left Mouth corner
-        (150.0, -150.0, -125.0)      # 6. Right Mouth corner
-    ], dtype="double")
-
     try:
         yunet.setInputSize((w, h))
         ret, faces = yunet.detect(frame)
 
-        # Ensure detection succeeded and faces is not None
         if ret > 0 and faces is not None:
             headcount = len(faces)
             for face in faces:
-                # face layout: [x, y, w, h, score, lm0_x, lm0_y, lm1_x, lm1_y, ..., lm4_y]
+                # 1. Extract Box
                 x, y, w_box, h_box = face[:4].astype(int)
 
-                # Correct landmark slice: landmarks start at index 5 and go to 15 (10 values)
+                # 2. Extract Landmarks (YuNet: LE, RE, Nose, LM, RM)
                 lm = face[5:15].reshape((5, 2))
+                l_eye, r_eye, nose, l_mouth, r_mouth = lm
 
-                # Map Yunet landmarks (common order: left_eye, right_eye, nose, left_mouth, right_mouth)
-                left_eye = lm[0]
-                right_eye = lm[1]
-                nose = lm[2]
-                left_mouth = lm[3]
-                right_mouth = lm[4]
+                # 3. Synthesize Chin (Bottom center of bounding box)
+                chin = np.array([x + w_box / 2.0, y + h_box])
 
-                # --- SYNTHESIZE 6th POINT (CHIN) ---
-                # Use bottom-center of the detected box (more robust than extrapolating from nose/mouth)
-                chin_x = x + w_box / 2.0
-                chin_y = y + h_box
-                chin = np.array([chin_x, chin_y])
-
-                # Map to 6 points for SolvePnP (order must match model_points)
+                # 4. Map Image Points (MUST match model_points order)
                 image_points = np.array([
-                    nose,       # Nose tip
-                    chin,       # Chin
-                    left_eye,   # Left Eye
-                    right_eye,  # Right Eye
-                    left_mouth, # Left Mouth
-                    right_mouth # Right Mouth
+                    nose,       # 1. Nose
+                    chin,       # 2. Chin
+                    l_eye,      # 3. Left Eye
+                    r_eye,      # 4. Right Eye
+                    l_mouth,    # 5. Left Mouth
+                    r_mouth     # 6. Right Mouth
                 ], dtype="double")
 
-                # --- DRAW THE 6 POINTS (clamped to image) ---
-                for i_pt, (px, py) in enumerate(image_points):
-                    ix = int(round(px))
-                    iy = int(round(py))
-                    if 0 <= ix < frame.shape[1] and 0 <= iy < frame.shape[0]:
-                        color = (255, 0, 255) if i_pt != 1 else (0, 255, 255)  # chin in different color
-                        cv2.circle(frame, (ix, iy), 3, color, -1)
+                # --- DRAW LANDMARKS ---
+                for i, pt in enumerate(image_points):
+                    ix, iy = int(pt[0]), int(pt[1])
+                    # Draw chin in yellow, others in magenta
+                    color = (0, 255, 255) if i == 1 else (255, 0, 255)
+                    cv2.circle(frame, (ix, iy), 4, color, -1)
 
-                # Camera Matrix
+                # 5. Solve Pose
                 focal_length = w
-                center = (w / 2, h / 2)
+                cam_center = (w / 2, h / 2)
                 camera_matrix = np.array([
-                    [focal_length, 0, center[0]],
-                    [0, focal_length, center[1]],
+                    [focal_length, 0, cam_center[0]],
+                    [0, focal_length, cam_center[1]],
                     [0, 0, 1]
                 ], dtype="double")
 
@@ -444,48 +434,34 @@ def detect_faces_and_pose(frame, return_attention=False):
                 )
 
                 if success:
-                    # Convert rotation vector to rotation matrix
                     rmat, _ = cv2.Rodrigues(rot_vec)
-
-                    # Extract Euler angles (roll, pitch, yaw) from rotation matrix
-                    sy = math.sqrt(rmat[0, 0] * rmat[0, 0] + rmat[1, 0] * rmat[1, 0])
-                    singular = sy < 1e-6
-
-                    if not singular:
-                        x_rot = math.atan2(rmat[2, 1], rmat[2, 2])
-                        y_rot = math.atan2(-rmat[2, 0], sy)
-                        z_rot = math.atan2(rmat[1, 0], rmat[0, 0])
+                    
+                    # Euler Angle Extraction
+                    sy = math.sqrt(rmat[0, 0]**2 + rmat[1, 0]**2)
+                    if sy > 1e-6:
+                        pitch = math.degrees(math.atan2(-rmat[2, 0], sy))
+                        yaw = math.degrees(math.atan2(rmat[1, 0], rmat[0, 0]))
+                        roll = math.degrees(math.atan2(rmat[2, 1], rmat[2, 2]))
                     else:
-                        x_rot = math.atan2(-rmat[1, 2], rmat[1, 1])
-                        y_rot = math.atan2(-rmat[2, 0], sy)
-                        z_rot = 0
-
-                    # Convert to degrees and name them
-                    roll = math.degrees(x_rot)
-                    pitch = math.degrees(y_rot)
-                    yaw = math.degrees(z_rot)
+                        pitch = math.degrees(math.atan2(-rmat[2, 0], sy))
+                        yaw = 0
+                        roll = math.degrees(math.atan2(-rmat[1, 2], rmat[1, 1]))
 
                     s_yaw = get_smoothed_yaw(yaw)
                     s_pitch = get_smoothed_pitch(pitch)
 
-                    # Debug prints (will appear on stdout)
-                    print(f"DEBUG | Yaw: {s_yaw:6.1f} | Pitch: {s_pitch:6.1f} | Roll: {roll:6.1f}")
-
-                    # --- ADJUST CENTERS HERE IF NEEDED ---
-                    center_yaw = 0.0
-                    center_pitch = 0.0
-
+                    # Use calibrated centers instead of resetting to 0.0 every frame
                     diff_yaw = abs(s_yaw - center_yaw)
                     diff_pitch = abs(s_pitch - center_pitch)
 
-                    is_attentive = diff_yaw < 35 and diff_pitch < 30
-                    if is_attentive:
-                        attentive += 1
-                        label, color = ("Attentive", (0, 255, 0))
-                    else:
-                        distracted += 1
-                        label, color = ("Distracted", (0, 0, 255))
+                    # Thresholds
+                    is_att = diff_yaw < 25 and diff_pitch < 20
+                    label, color = ("Attentive", (0, 255, 0)) if is_att else ("Distracted", (0, 0, 255))
+                    
+                    if is_att: attentive += 1 
+                    else: distracted += 1
 
+                    # UI Rendering
                     cv2.rectangle(frame, (x, y), (x + w_box, y + h_box), color, 2)
                     cv2.putText(frame, f"{label} Y:{int(s_yaw)} P:{int(s_pitch)}",
                                 (x, y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
@@ -493,13 +469,8 @@ def detect_faces_and_pose(frame, return_attention=False):
     except Exception as e:
         print(f"Pose Error: {e}")
 
-    # UI
-    cv2.putText(frame, f"Headcount: {headcount}",
-                (10, 30),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                0.7,
-                (255, 255, 255),
-                2)
+    cv2.putText(frame, f"Headcount: {headcount}", (10, 30),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
 
     if return_attention:
         return frame, {"attentive": attentive, "distracted": distracted}
