@@ -232,12 +232,9 @@ import json
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 # YuNet face detector (face + 5 landmarks)
-# yunet_model = os.path.join(BASE_DIR, "models", "face_detection_yunet_2023mar.onnx")
-# yunet = cv2.FaceDetectorYN.create(yunet_model, "", (320, 320))
-
-yunet_model = os.path.join(BASE_DIR, "models", "yunet_luxonis.onnx")
-# input size can be tuned (320,320) is a good balance for latency/accuracy
+yunet_model = os.path.join(BASE_DIR, "models", "face_detection_yunet_2023mar.onnx")
 yunet = cv2.FaceDetectorYN.create(yunet_model, "", (320, 320))
+
 
 # Optional tuning
 yunet.setScoreThreshold(0.6)
@@ -264,14 +261,14 @@ def get_camera():
     return camera
 
 
-# ...existing code...
+
 model_points = np.array([
-    (0.0, 0.0, 0.0),             # 1. Nose tip
-    (0.0, -330.0, -65.0),        # 2. Chin
-    (-225.0, 170.0, -135.0),     # 3. Left Eye
-    (225.0, 170.0, -135.0),      # 4. Right Eye
-    (-150.0, -150.0, -125.0),    # 5. Left Mouth corner
-    (150.0, -150.0, -125.0)      # 6. Right Mouth corner
+    (0.0, 0.0, 0.0),           # Nose tip
+    (0.0, -110.0, -25.0),      # Chin
+    (-75.0, 65.0, -50.0),      # Left eye
+    (75.0, 65.0, -50.0),       # Right eye
+    (-60.0, -50.0, -50.0),     # Left mouth corner
+    (60.0, -50.0, -50.0)       # Right mouth corner
 ], dtype="double")
 
 center_yaw = None
