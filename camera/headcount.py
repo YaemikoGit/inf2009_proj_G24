@@ -257,70 +257,51 @@ def get_camera():
             time.sleep(1)
     return camera
 
+
 # Smoothing buffers
 pitch_history = []
 yaw_history = []
 
 def get_smoothed_pitch(new_val):
     pitch_history.append(new_val)
-    if len(pitch_history) > 10:
-        pitch_history.pop(0)
+    if len(pitch_history) > 10: pitch_history.pop(0)
     return sum(pitch_history) / len(pitch_history)
 
 def get_smoothed_yaw(new_val):
     yaw_history.append(new_val)
-    if len(yaw_history) > 10:
-        yaw_history.pop(0)
+    if len(yaw_history) > 10: yaw_history.pop(0)
     return sum(yaw_history) / len(yaw_history)
-
 
 def detect_faces_and_pose(frame, return_attention=False):
     h, w = frame.shape[:2]
-
     headcount = 0
     attentive = 0
     distracted = 0
 
-    try:
-        # 🔹 REQUIRED for YuNet
-        yunet.setInputSize((w, h))
+    # 3D Model Points (Standardized for YuNet's 5 landmarks)
+    # 0: Right Eye, 1: Left Eye, 2: Nose, 3: Right Mouth, 4: Left Mouth
+    model_points = np.array([
+        (-225.0, 170.0, -135.0), # Right Eye
+        (225.0, 170.0, -135.0),  # Left Eye
+        (0.0, 0.0, 0.0),         # Nose Tip
+        (-150.0, -150.0, -125.0),# Right Mouth Corner
+        (150.0, -150.0, -125.0)  # Left Mouth Corner
+    ], dtype="double")
 
+    try:
+        # YuNet specific input setup
+        yunet.setInputSize((w, h))
         _, faces = yunet.detect(frame)
 
         if faces is not None:
             headcount = len(faces)
-
             for face in faces:
+                # 1. Extract Bbox and Landmarks
+                # face[0:4] = bbox, face[4:14] = landmarks
                 x, y, w_box, h_box = face[:4].astype(int)
-
-                # YuNet 5 landmarks
                 landmarks = face[4:14].reshape((5, 2))
 
-                # Map to 6 points (reuse nose)
-                image_points = np.array([
-                    landmarks[2],  # Nose tip
-                    landmarks[2],  # Fake nose base
-                    landmarks[0],  # Left eye
-                    landmarks[1],  # Right eye
-                    landmarks[3],  # Left mouth
-                    landmarks[4],  # Right mouth
-                ], dtype="double")
-
-                # Debug draw
-                for (px, py) in image_points:
-                    cv2.circle(frame, (int(px), int(py)), 3, (255, 0, 255), -1)
-
-                # 3D model points
-                model_points = np.array([
-                    (0.0, 0.0, 0.0),
-                    (0.0, -30.0, 20.0),
-                    (-30.0, 30.0, 10.0),
-                    (30.0, 30.0, 10.0),
-                    (-30.0, -30.0, 10.0),
-                    (30.0, -30.0, 10.0)
-                ], dtype="double")
-
-                # Camera matrix
+                # 2. Camera Matrix
                 focal_length = w
                 center = (w / 2, h / 2)
                 camera_matrix = np.array([
@@ -331,31 +312,34 @@ def detect_faces_and_pose(frame, return_attention=False):
 
                 dist_coeffs = np.zeros((4, 1))
 
-                success_pnp, rot_vec, trans_vec = cv2.solvePnP(
+                # 3. Solve Perspective-n-Point
+                success, rot_vec, trans_vec = cv2.solvePnP(
                     model_points,
-                    image_points,
+                    landmarks, # The 5 points from YuNet
                     camera_matrix,
                     dist_coeffs,
                     flags=cv2.SOLVEPNP_ITERATIVE
                 )
 
-                if success_pnp:
+                if success:
+                    # Decompose rotation vector to Euler angles
                     rmat, _ = cv2.Rodrigues(rot_vec)
                     pmat = cv2.hconcat((rmat, trans_vec))
                     _, _, _, _, _, _, euler = cv2.decomposeProjectionMatrix(pmat)
-
+                    
                     pitch, yaw, roll = euler.flatten()
 
-                    # Smooth values
+                    # 4. Smoothing and Attention Logic
                     s_yaw = get_smoothed_yaw(yaw)
                     s_pitch = get_smoothed_pitch(pitch)
 
-                    # Center + thresholds (you can tune later)
-                    center_yaw = 0
-                    center_pitch = 0
-
-                    yaw_threshold = 40
-                    pitch_threshold = 40
+                    # TUNE THESE: Based on your classroom camera angle
+                    # If camera is high up, center_pitch might need to be ~15-20
+                    center_yaw = 0.0
+                    center_pitch = 0.0 
+                    
+                    yaw_threshold = 35.0
+                    pitch_threshold = 30.0
 
                     diff_yaw = abs(s_yaw - center_yaw)
                     diff_pitch = abs(s_pitch - center_pitch)
@@ -369,28 +353,13 @@ def detect_faces_and_pose(frame, return_attention=False):
                         distracted += 1
                         label, color = "Distracted", (0, 0, 255)
 
-                    # Draw box
-                    x1, y1, x2, y2 = x, y, x + w_box, y + h_box
-                    cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
-
-                    cv2.putText(frame,
-                                f"Y:{int(yaw)} P:{int(pitch)}",
-                                (x1, y2 + 20),
-                                cv2.FONT_HERSHEY_SIMPLEX,
-                                0.5,
-                                (255, 255, 255),
-                                1)
-
-                    cv2.putText(frame,
-                                label,
-                                (x1, y1 - 10),
-                                cv2.FONT_HERSHEY_SIMPLEX,
-                                0.6,
-                                color,
-                                2)
+                    # 5. Visual Overlays
+                    cv2.rectangle(frame, (x, y), (x + w_box, y + h_box), color, 2)
+                    cv2.putText(frame, f"{label} (Y:{int(s_yaw)} P:{int(s_pitch)})", 
+                                (x, y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
 
     except Exception as e:
-        print("Pose Error:", e)
+        print(f"Pose Estimation Error: {e}")
 
     # UI
     cv2.putText(frame, f"Headcount: {headcount}",
