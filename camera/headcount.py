@@ -323,6 +323,9 @@ def get_pose_values(frame):
                 left_mouth,
                 right_mouth
             ], dtype="double")
+            
+            for (px, py) in image_points:
+                cv2.circle(frame, (int(px), int(py)), 3, (255, 0, 255), -1)
 
             # Camera params
             focal_length = w
@@ -336,8 +339,8 @@ def get_pose_values(frame):
                 model_points,
                 image_points,
                 camera_matrix,
-                np.zeros((4,1)),
-                flags=cv2.SOLVEPNP_ITERATIVE
+                None,
+                flags=cv2.SOLVEPNP_SQPNP
             )
 
             if ok:
@@ -447,7 +450,7 @@ def detect_faces_and_pose(frame, return_attention=False):
 
                 ok, rot_vec, trans_vec = cv2.solvePnP(
                     model_points, image_points, cam_matrix,
-                    np.zeros((4,1)), flags=cv2.SOLVEPNP_ITERATIVE
+                    None, flags=cv2.SOLVEPNP_SQPNP
                 )
 
                 if not ok:
