@@ -232,7 +232,11 @@ import json
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 # YuNet face detector (face + 5 landmarks)
-yunet_model = os.path.join(BASE_DIR, "models", "face_detection_yunet_2023mar.onnx")
+# yunet_model = os.path.join(BASE_DIR, "models", "face_detection_yunet_2023mar.onnx")
+# yunet = cv2.FaceDetectorYN.create(yunet_model, "", (320, 320))
+
+yunet_model = os.path.join(BASE_DIR, "models", "yunet_luxonis.onnx")
+# input size can be tuned (320,320) is a good balance for latency/accuracy
 yunet = cv2.FaceDetectorYN.create(yunet_model, "", (320, 320))
 
 # Optional tuning

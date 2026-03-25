@@ -16,4 +16,7 @@ https://github.com/opencv/opencv_zoo/raw/main/models/face_detection_yunet/face_d
 
 wget -O models/lbfmodel.yaml "https://raw.githubusercontent.com/kurnianggoro/GSOC2017/master/data/lbfmodel.yaml"
 
+wget -O models/yunet_luxonis.onnx \
+https://models.luxonis.com/luxonis/yunet/5d635f3c-45c0-41d2-8800-7ca3681b1915
+
 echo "Download complete."
