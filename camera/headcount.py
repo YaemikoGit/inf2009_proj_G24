@@ -278,30 +278,51 @@ def detect_faces_and_pose(frame, return_attention=False):
     attentive = 0
     distracted = 0
 
-    # 3D Model Points (Standardized for YuNet's 5 landmarks)
-    # 0: Right Eye, 1: Left Eye, 2: Nose, 3: Right Mouth, 4: Left Mouth
+    # 3D Model Points (6 points to satisfy DLT algorithm)
+    # Coordinates in mm: (x, y, z)
     model_points = np.array([
-        (-225.0, 170.0, -135.0), # Right Eye
-        (225.0, 170.0, -135.0),  # Left Eye
-        (0.0, 0.0, 0.0),         # Nose Tip
-        (-150.0, -150.0, -125.0),# Right Mouth Corner
-        (150.0, -150.0, -125.0)  # Left Mouth Corner
+        (0.0, 0.0, 0.0),             # 1. Nose tip
+        (0.0, -330.0, -65.0),        # 2. Chin (Synthetic)
+        (-225.0, 170.0, -135.0),     # 3. Left Eye
+        (225.0, 170.0, -135.0),      # 4. Right Eye
+        (-150.0, -150.0, -125.0),    # 5. Left Mouth corner
+        (150.0, -150.0, -125.0)      # 6. Right Mouth corner
     ], dtype="double")
 
     try:
-        # YuNet specific input setup
         yunet.setInputSize((w, h))
         _, faces = yunet.detect(frame)
 
         if faces is not None:
             headcount = len(faces)
             for face in faces:
-                # 1. Extract Bbox and Landmarks
-                # face[0:4] = bbox, face[4:14] = landmarks
                 x, y, w_box, h_box = face[:4].astype(int)
-                landmarks = face[4:14].reshape((5, 2))
+                
+                # YuNet 5 landmarks: [0:RE, 1:LE, 2:Nose, 3:RM, 4:LM]
+                lm = face[4:14].reshape((5, 2))
 
-                # 2. Camera Matrix
+                # --- SYNTHESIZE 6th POINT (CHIN) ---
+                # Estimate chin position: Nose + 1.2 * (MouthCenter - Nose)
+                mouth_center = (lm[3] + lm[4]) / 2
+                chin_x = lm[2][0] + (mouth_center[0] - lm[2][0]) * 1.2
+                chin_y = lm[2][1] + (mouth_center[1] - lm[2][1]) * 1.2
+                chin = np.array([chin_x, chin_y])
+
+                # Map to 6 points for SolvePnP
+                image_points = np.array([
+                    lm[2],    # Nose tip
+                    chin,     # Chin
+                    lm[1],    # Left Eye
+                    lm[0],    # Right Eye
+                    lm[4],    # Left Mouth
+                    lm[3]     # Right Mouth
+                ], dtype="double")
+
+                # --- DEBUG: Draw the 6 points ---
+                for (px, py) in image_points:
+                    cv2.circle(frame, (int(px), int(py)), 3, (255, 0, 255), -1)
+
+                # Camera Matrix
                 focal_length = w
                 center = (w / 2, h / 2)
                 camera_matrix = np.array([
@@ -310,56 +331,40 @@ def detect_faces_and_pose(frame, return_attention=False):
                     [0, 0, 1]
                 ], dtype="double")
 
-                dist_coeffs = np.zeros((4, 1))
-
-                # 3. Solve Perspective-n-Point
                 success, rot_vec, trans_vec = cv2.solvePnP(
-                    model_points,
-                    landmarks, # The 5 points from YuNet
-                    camera_matrix,
-                    dist_coeffs,
-                    flags=cv2.SOLVEPNP_ITERATIVE
+                    model_points, image_points, camera_matrix, 
+                    np.zeros((4, 1)), flags=cv2.SOLVEPNP_ITERATIVE
                 )
 
                 if success:
-                    # Decompose rotation vector to Euler angles
                     rmat, _ = cv2.Rodrigues(rot_vec)
                     pmat = cv2.hconcat((rmat, trans_vec))
                     _, _, _, _, _, _, euler = cv2.decomposeProjectionMatrix(pmat)
-                    
                     pitch, yaw, roll = euler.flatten()
 
-                    # 4. Smoothing and Attention Logic
                     s_yaw = get_smoothed_yaw(yaw)
                     s_pitch = get_smoothed_pitch(pitch)
 
-                    # TUNE THESE: Based on your classroom camera angle
-                    # If camera is high up, center_pitch might need to be ~15-20
-                    center_yaw = 0.0
-                    center_pitch = 0.0 
-                    
-                    yaw_threshold = 35.0
-                    pitch_threshold = 30.0
+                    # --- CALIBRATION DEBUG LINE ---
+                    # Look directly at the camera and note these values to set your 'centers'
+                    print(f"DEBUG | Raw Yaw: {yaw:6.1f} | Raw Pitch: {pitch:6.1f} | Smooth Y: {s_yaw:6.1f} | Smooth P: {s_pitch:6.1f}")
 
+                    # --- ADJUST CENTERS HERE ---
+                    center_yaw = 0.0 
+                    center_pitch = 0.0
+                    
                     diff_yaw = abs(s_yaw - center_yaw)
                     diff_pitch = abs(s_pitch - center_pitch)
 
-                    is_attentive = diff_yaw < yaw_threshold and diff_pitch < pitch_threshold
+                    is_attentive = diff_yaw < 35 and diff_pitch < 30
+                    label, color = ("Attentive", (0, 255, 0)) if is_attentive else ("Distracted", (0, 0, 255))
 
-                    if is_attentive:
-                        attentive += 1
-                        label, color = "Attentive", (0, 255, 0)
-                    else:
-                        distracted += 1
-                        label, color = "Distracted", (0, 0, 255)
-
-                    # 5. Visual Overlays
                     cv2.rectangle(frame, (x, y), (x + w_box, y + h_box), color, 2)
-                    cv2.putText(frame, f"{label} (Y:{int(s_yaw)} P:{int(s_pitch)})", 
+                    cv2.putText(frame, f"{label} Y:{int(s_yaw)} P:{int(s_pitch)}", 
                                 (x, y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
 
     except Exception as e:
-        print(f"Pose Estimation Error: {e}")
+        print(f"Pose Error: {e}")
 
     # UI
     cv2.putText(frame, f"Headcount: {headcount}",
