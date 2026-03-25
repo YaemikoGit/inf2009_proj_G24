@@ -235,7 +235,7 @@ yunet = cv2.FaceDetectorYN.create(yunet_model, "", (320, 320))
 
 # Optional tuning
 yunet.setScoreThreshold(0.6)
-yunet.setNmsThreshold(0.3)
+yunet.setNMSThreshold(0.3)
 
 camera = None
 
