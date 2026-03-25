@@ -291,36 +291,48 @@ def detect_faces_and_pose(frame, return_attention=False):
 
     try:
         yunet.setInputSize((w, h))
-        _, faces = yunet.detect(frame)
+        ret, faces = yunet.detect(frame)
 
-        if faces is not None:
+        # Ensure detection succeeded and faces is not None
+        if ret > 0 and faces is not None:
             headcount = len(faces)
             for face in faces:
+                # face layout: [x, y, w, h, score, lm0_x, lm0_y, lm1_x, lm1_y, ..., lm4_y]
                 x, y, w_box, h_box = face[:4].astype(int)
-                
-                # YuNet 5 landmarks: [0:RE, 1:LE, 2:Nose, 3:RM, 4:LM]
-                lm = face[4:14].reshape((5, 2))
+
+                # Correct landmark slice: landmarks start at index 5 and go to 15 (10 values)
+                lm = face[5:15].reshape((5, 2))
+
+                # Map Yunet landmarks (common order: left_eye, right_eye, nose, left_mouth, right_mouth)
+                left_eye = lm[0]
+                right_eye = lm[1]
+                nose = lm[2]
+                left_mouth = lm[3]
+                right_mouth = lm[4]
 
                 # --- SYNTHESIZE 6th POINT (CHIN) ---
-                # Estimate chin position: Nose + 1.2 * (MouthCenter - Nose)
-                mouth_center = (lm[3] + lm[4]) / 2
-                chin_x = lm[2][0] + (mouth_center[0] - lm[2][0]) * 1.2
-                chin_y = lm[2][1] + (mouth_center[1] - lm[2][1]) * 1.2
+                # Use bottom-center of the detected box (more robust than extrapolating from nose/mouth)
+                chin_x = x + w_box / 2.0
+                chin_y = y + h_box
                 chin = np.array([chin_x, chin_y])
 
-                # Map to 6 points for SolvePnP
+                # Map to 6 points for SolvePnP (order must match model_points)
                 image_points = np.array([
-                    lm[2],    # Nose tip
-                    chin,     # Chin
-                    lm[1],    # Left Eye
-                    lm[0],    # Right Eye
-                    lm[4],    # Left Mouth
-                    lm[3]     # Right Mouth
+                    nose,       # Nose tip
+                    chin,       # Chin
+                    left_eye,   # Left Eye
+                    right_eye,  # Right Eye
+                    left_mouth, # Left Mouth
+                    right_mouth # Right Mouth
                 ], dtype="double")
 
-                # --- DEBUG: Draw the 6 points ---
+                # --- DRAW THE 6 POINTS (clamped to image) ---
                 for (px, py) in image_points:
-                    cv2.circle(frame, (int(px), int(py)), 3, (255, 0, 255), -1)
+                    ix = int(round(px))
+                    iy = int(round(py))
+                    # draw only if inside frame to avoid errors
+                    if 0 <= ix < frame.shape[1] and 0 <= iy < frame.shape[0]:
+                        cv2.circle(frame, (ix, iy), 3, (255, 0, 255), -1)
 
                 # Camera Matrix
                 focal_length = w
@@ -332,7 +344,7 @@ def detect_faces_and_pose(frame, return_attention=False):
                 ], dtype="double")
 
                 success, rot_vec, trans_vec = cv2.solvePnP(
-                    model_points, image_points, camera_matrix, 
+                    model_points, image_points, camera_matrix,
                     np.zeros((4, 1)), flags=cv2.SOLVEPNP_ITERATIVE
                 )
 
@@ -345,22 +357,26 @@ def detect_faces_and_pose(frame, return_attention=False):
                     s_yaw = get_smoothed_yaw(yaw)
                     s_pitch = get_smoothed_pitch(pitch)
 
-                    # --- CALIBRATION DEBUG LINE ---
-                    # Look directly at the camera and note these values to set your 'centers'
+                    # Debug prints (will appear on stdout)
                     print(f"DEBUG | Raw Yaw: {yaw:6.1f} | Raw Pitch: {pitch:6.1f} | Smooth Y: {s_yaw:6.1f} | Smooth P: {s_pitch:6.1f}")
 
-                    # --- ADJUST CENTERS HERE ---
-                    center_yaw = 0.0 
-                    center_pitch = 0.0
-                    
+                    # --- ADJUST CENTERS HERE IF NEEDED ---
+                    center_yaw = 16.0
+                    center_pitch = 12.0
+
                     diff_yaw = abs(s_yaw - center_yaw)
                     diff_pitch = abs(s_pitch - center_pitch)
 
                     is_attentive = diff_yaw < 35 and diff_pitch < 30
-                    label, color = ("Attentive", (0, 255, 0)) if is_attentive else ("Distracted", (0, 0, 255))
+                    if is_attentive:
+                        attentive += 1
+                        label, color = ("Attentive", (0, 255, 0))
+                    else:
+                        distracted += 1
+                        label, color = ("Distracted", (0, 0, 255))
 
                     cv2.rectangle(frame, (x, y), (x + w_box, y + h_box), color, 2)
-                    cv2.putText(frame, f"{label} Y:{int(s_yaw)} P:{int(s_pitch)}", 
+                    cv2.putText(frame, f"{label} Y:{int(s_yaw)} P:{int(s_pitch)}",
                                 (x, y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
 
     except Exception as e:
