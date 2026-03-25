@@ -226,6 +226,7 @@ import numpy as np
 import os
 import glob
 import time
+import math
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -327,12 +328,12 @@ def detect_faces_and_pose(frame, return_attention=False):
                 ], dtype="double")
 
                 # --- DRAW THE 6 POINTS (clamped to image) ---
-                for (px, py) in image_points:
+                for i_pt, (px, py) in enumerate(image_points):
                     ix = int(round(px))
                     iy = int(round(py))
-                    # draw only if inside frame to avoid errors
                     if 0 <= ix < frame.shape[1] and 0 <= iy < frame.shape[0]:
-                        cv2.circle(frame, (ix, iy), 3, (255, 0, 255), -1)
+                        color = (255, 0, 255) if i_pt != 1 else (0, 255, 255)  # chin in different color
+                        cv2.circle(frame, (ix, iy), 3, color, -1)
 
                 # Camera Matrix
                 focal_length = w
@@ -349,20 +350,36 @@ def detect_faces_and_pose(frame, return_attention=False):
                 )
 
                 if success:
+                    # Convert rotation vector to rotation matrix
                     rmat, _ = cv2.Rodrigues(rot_vec)
-                    pmat = cv2.hconcat((rmat, trans_vec))
-                    _, _, _, _, _, _, euler = cv2.decomposeProjectionMatrix(pmat)
-                    pitch, yaw, roll = euler.flatten()
+
+                    # Extract Euler angles (roll, pitch, yaw) from rotation matrix
+                    sy = math.sqrt(rmat[0, 0] * rmat[0, 0] + rmat[1, 0] * rmat[1, 0])
+                    singular = sy < 1e-6
+
+                    if not singular:
+                        x_rot = math.atan2(rmat[2, 1], rmat[2, 2])
+                        y_rot = math.atan2(-rmat[2, 0], sy)
+                        z_rot = math.atan2(rmat[1, 0], rmat[0, 0])
+                    else:
+                        x_rot = math.atan2(-rmat[1, 2], rmat[1, 1])
+                        y_rot = math.atan2(-rmat[2, 0], sy)
+                        z_rot = 0
+
+                    # Convert to degrees and name them
+                    roll = math.degrees(x_rot)
+                    pitch = math.degrees(y_rot)
+                    yaw = math.degrees(z_rot)
 
                     s_yaw = get_smoothed_yaw(yaw)
                     s_pitch = get_smoothed_pitch(pitch)
 
                     # Debug prints (will appear on stdout)
-                    print(f"DEBUG | Raw Yaw: {yaw:6.1f} | Raw Pitch: {pitch:6.1f} | Smooth Y: {s_yaw:6.1f} | Smooth P: {s_pitch:6.1f}")
+                    print(f"DEBUG | Yaw: {s_yaw:6.1f} | Pitch: {s_pitch:6.1f} | Roll: {roll:6.1f}")
 
                     # --- ADJUST CENTERS HERE IF NEEDED ---
-                    center_yaw = 16.0
-                    center_pitch = 12.0
+                    center_yaw = 0.0
+                    center_pitch = 0.0
 
                     diff_yaw = abs(s_yaw - center_yaw)
                     diff_pitch = abs(s_pitch - center_pitch)
