@@ -262,12 +262,11 @@ def get_camera():
 
 # ...existing code...
 model_points = np.array([
-    (0.0, 0.0, 0.0),             # 1. Nose tip
-    (0.0, -330.0, -65.0),        # 2. Chin
-    (-225.0, 170.0, -135.0),     # 3. Left Eye
-    (225.0, 170.0, -135.0),      # 4. Right Eye
-    (-150.0, -150.0, -125.0),    # 5. Left Mouth corner
-    (150.0, -150.0, -125.0)      # 6. Right Mouth corner
+        (-30.0,  40.0,  30.0),
+        ( 30.0,  40.0,  30.0),
+        (  0.0,   0.0,   0.0),
+        (-25.0, -30.0,  20.0),
+        ( 25.0, -30.0,  20.0)      # 6. Right Mouth corner
 ], dtype="double")
 
 center_yaw = None
