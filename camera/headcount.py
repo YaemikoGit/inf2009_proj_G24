@@ -261,241 +261,184 @@ def get_camera():
     return camera
 
 
-# --- Correct 5-point Face Model (matches YuNet exactly) ---
-model_points = np.array([
-    (0.0, 0.0, 0.0),             # Nose tip
-    (-225.0, 170.0, -135.0),     # Left Eye (User's Left)
-    (225.0, 170.0, -135.0),      # Right Eye (User's Right)
-    (-150.0, -150.0, -125.0),    # Left Mouth Corner
-    (150.0, -150.0, -125.0)      # Right Mouth Corner
-], dtype="double")
+import cv2
+import numpy as np
+import os
+import glob
+import time
 
-center_yaw = None
-center_pitch = None
-CENTERS_FILE = os.path.join(BASE_DIR, "pose_centers.json")
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-def load_centers():
-    global center_yaw, center_pitch
-    try:
-        with open(CENTERS_FILE, "r") as f:
-            d = json.load(f)
-            center_yaw = float(d.get("yaw", 0.0))
-            center_pitch = float(d.get("pitch", 0.0))
-            print(f"Loaded centers yaw={center_yaw:.2f} pitch={center_pitch:.2f}")
-    except Exception:
-        center_yaw = None
-        center_pitch = None
-        print("No pose_centers.json found — auto-calibration will run.")
+# YuNet face detector (face + 5 landmarks)
+yunet_model = os.path.join(BASE_DIR, "models", "face_detection_yunet_2023mar.onnx")
+yunet = cv2.FaceDetectorYN.create(yunet_model, "", (320, 320))
 
-def save_centers(yaw_val, pitch_val):
-    try:
-        with open(CENTERS_FILE, "w") as f:
-            json.dump({"yaw": float(yaw_val), "pitch": float(pitch_val)}, f)
-            print(f"Saved centers yaw={yaw_val:.2f} pitch={pitch_val:.2f}")
-    except Exception as e:
-        print("Failed to save centers:", e)
+# Optional tuning
+yunet.setScoreThreshold(0.6)
+yunet.setNmsThreshold(0.3)
 
+camera = None
 
-# --- Extract single pose from a frame ---
-def get_pose_values(frame):
-    h, w = frame.shape[:2]
-    try:
-        yunet.setInputSize((w, h))
-        ret, faces = yunet.detect(frame)
+def find_working_camera():
+    for dev in glob.glob('/dev/video*'):
+        cap = cv2.VideoCapture(dev)
+        if cap.isOpened():
+            print(f"Camera found at {dev}")
+            return cap
+        cap.release()
+    return None
 
-        if ret > 0 and faces is not None:
-            face = faces[0]
+def get_camera():
+    global camera
+    if camera is None or not camera.isOpened():
+        print("Camera disconnected. Scanning for new camera...")
+        camera = find_working_camera()
+        if camera is None:
+            time.sleep(1)
+    return camera
 
-            # YuNet → 5 points
-            lm = np.array(face[5:15], dtype=float).reshape((5, 2))
-
-            if lm.max() <= 1.01:   # normalized → pixel
-                lm[:, 0] *= w
-                lm[:, 1] *= h
-
-            left_eye, right_eye, nose, left_mouth, right_mouth = lm
-
-            # Must match model_points order!
-            image_points = np.array([
-                nose,
-                left_eye,
-                right_eye,
-                left_mouth,
-                right_mouth
-            ], dtype="double")
-            
-            for (px, py) in image_points:
-                cv2.circle(frame, (int(px), int(py)), 3, (255, 0, 255), -1)
-
-            # Camera params
-            focal_length = w
-            camera_matrix = np.array([
-                [focal_length, 0, w/2],
-                [0, focal_length, h/2],
-                [0, 0, 1]
-            ], dtype="double")
-
-            ok, rot_vec, trans_vec = cv2.solvePnP(
-                model_points,
-                image_points,
-                camera_matrix,
-                None,
-                flags=cv2.SOLVEPNP_SQPNP
-            )
-
-            if ok:
-                rmat, _ = cv2.Rodrigues(rot_vec)
-                sy = math.sqrt(rmat[0,0]**2 + rmat[1,0]**2)
-
-                pitch = math.degrees(math.atan2(-rmat[2,0], sy))
-                yaw   = math.degrees(math.atan2(rmat[1,0], rmat[0,0]))
-                roll  = math.degrees(math.atan2(rmat[2,1], rmat[2,2]))
-
-                return True, (yaw, pitch, roll)
-
-    except Exception as e:
-        print("get_pose_values error:", e)
-
-    return False, (None, None, None)
-
-
-# --- Calibration ---
-def calibrate_pose(samples=50, delay=0.05):
-    cam = get_camera()
-    if cam is None:
-        print("No camera")
-        return
-
-    yaw_vals = []
-    pitch_vals = []
-
-    print("Calibration: look straight at camera...")
-
-    while len(yaw_vals) < samples:
-        ret, frame = cam.read()
-        if not ret: continue
-
-        ok, (yaw, pitch, _) = get_pose_values(frame)
-        if ok:
-            yaw_vals.append(yaw)
-            pitch_vals.append(pitch)
-
-        time.sleep(delay)
-
-    center_yaw = sum(yaw_vals) / len(yaw_vals)
-    center_pitch = sum(pitch_vals) / len(pitch_vals)
-
-    save_centers(center_yaw, center_pitch)
-    load_centers()
-
-
-load_centers()
-
-# --- Smoothing ---
-yaw_history = []
+# Smoothing buffers
 pitch_history = []
+yaw_history = []
 
-def get_smoothed_yaw(v):
-    yaw_history.append(v)
-    if len(yaw_history) > 10: yaw_history.pop(0)
-    return sum(yaw_history) / len(yaw_history)
-
-def get_smoothed_pitch(v):
-    pitch_history.append(v)
-    if len(pitch_history) > 10: pitch_history.pop(0)
+def get_smoothed_pitch(new_val):
+    pitch_history.append(new_val)
+    if len(pitch_history) > 10:
+        pitch_history.pop(0)
     return sum(pitch_history) / len(pitch_history)
 
+def get_smoothed_yaw(new_val):
+    yaw_history.append(new_val)
+    if len(yaw_history) > 10:
+        yaw_history.pop(0)
+    return sum(yaw_history) / len(yaw_history)
 
-# --- Main: Face + Attention ---
+
 def detect_faces_and_pose(frame, return_attention=False):
-    global center_yaw, center_pitch
-
     h, w = frame.shape[:2]
+
     headcount = 0
-    attentive = distracted = 0
+    attentive = 0
+    distracted = 0
 
     try:
+        # 🔹 REQUIRED for YuNet
         yunet.setInputSize((w, h))
-        ret, faces = yunet.detect(frame)
 
-        if ret > 0 and faces is not None:
+        _, faces = yunet.detect(frame)
+
+        if faces is not None:
             headcount = len(faces)
 
             for face in faces:
                 x, y, w_box, h_box = face[:4].astype(int)
 
-                # 5 YuNet keypoints
-                lm = np.array(face[5:15], dtype=float).reshape((5, 2))
-                if lm.max() <= 1.01:
-                    lm[:, 0] *= w
-                    lm[:, 1] *= h
+                # YuNet 5 landmarks
+                landmarks = face[4:14].reshape((5, 2))
 
-                left_eye, right_eye, nose, left_mouth, right_mouth = lm
-
-                # Must match model_points order
+                # Map to 6 points (reuse nose)
                 image_points = np.array([
-                    nose,
-                    left_eye,
-                    right_eye,
-                    left_mouth,
-                    right_mouth
+                    landmarks[2],  # Nose tip
+                    landmarks[2],  # Fake nose base
+                    landmarks[0],  # Left eye
+                    landmarks[1],  # Right eye
+                    landmarks[3],  # Left mouth
+                    landmarks[4],  # Right mouth
                 ], dtype="double")
 
-                # Camera intrinsics
-                cam_matrix = np.array([
-                    [w, 0, w/2],
-                    [0, w, h/2],
+                # Debug draw
+                for (px, py) in image_points:
+                    cv2.circle(frame, (int(px), int(py)), 3, (255, 0, 255), -1)
+
+                # 3D model points
+                model_points = np.array([
+                    (0.0, 0.0, 0.0),
+                    (0.0, -30.0, 20.0),
+                    (-30.0, 30.0, 10.0),
+                    (30.0, 30.0, 10.0),
+                    (-30.0, -30.0, 10.0),
+                    (30.0, -30.0, 10.0)
+                ], dtype="double")
+
+                # Camera matrix
+                focal_length = w
+                center = (w / 2, h / 2)
+                camera_matrix = np.array([
+                    [focal_length, 0, center[0]],
+                    [0, focal_length, center[1]],
                     [0, 0, 1]
                 ], dtype="double")
 
-                ok, rot_vec, trans_vec = cv2.solvePnP(
-                    model_points, image_points, cam_matrix,
-                    None, flags=cv2.SOLVEPNP_SQPNP
+                dist_coeffs = np.zeros((4, 1))
+
+                success_pnp, rot_vec, trans_vec = cv2.solvePnP(
+                    model_points,
+                    image_points,
+                    camera_matrix,
+                    dist_coeffs,
+                    flags=cv2.SOLVEPNP_EPNP
                 )
 
-                if not ok:
-                    continue
+                if success_pnp:
+                    rmat, _ = cv2.Rodrigues(rot_vec)
+                    pmat = cv2.hconcat((rmat, trans_vec))
+                    _, _, _, _, _, _, euler = cv2.decomposeProjectionMatrix(pmat)
 
-                rmat, _ = cv2.Rodrigues(rot_vec)
-                sy = math.sqrt(rmat[0,0]**2 + rmat[1,0]**2)
+                    pitch, yaw, roll = euler.flatten()
 
-                pitch = math.degrees(math.atan2(-rmat[2,0], sy))
-                yaw   = math.degrees(math.atan2(rmat[1,0], rmat[0,0]))
+                    # Smooth values
+                    s_yaw = get_smoothed_yaw(yaw)
+                    s_pitch = get_smoothed_pitch(pitch)
 
-                s_yaw = get_smoothed_yaw(yaw)
-                s_pitch = get_smoothed_pitch(pitch)
+                    # Center + thresholds (you can tune later)
+                    center_yaw = 0
+                    center_pitch = 0
 
-                # Auto-calibration if missing
-                if center_yaw is None:
-                    center_yaw = s_yaw
-                    center_pitch = s_pitch
-                    save_centers(center_yaw, center_pitch)
+                    yaw_threshold = 40
+                    pitch_threshold = 40
 
-                # --- Thresholds ---
-                diff_yaw = abs(s_yaw - center_yaw)
-                diff_pitch = abs(s_pitch - center_pitch)
+                    diff_yaw = abs(s_yaw - center_yaw)
+                    diff_pitch = abs(s_pitch - center_pitch)
 
-                yaw_th   = 25
-                pitch_th = 20
+                    is_attentive = diff_yaw < yaw_threshold and diff_pitch < pitch_threshold
 
-                is_attentive = diff_yaw < yaw_th and diff_pitch < pitch_th
+                    if is_attentive:
+                        attentive += 1
+                        label, color = "Attentive", (0, 255, 0)
+                    else:
+                        distracted += 1
+                        label, color = "Distracted", (0, 0, 255)
 
-                color = (0,255,0) if is_attentive else (0,0,255)
-                label = "Attentive" if is_attentive else "Distracted"
+                    # Draw box
+                    x1, y1, x2, y2 = x, y, x + w_box, y + h_box
+                    cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
 
-                if is_attentive: attentive += 1
-                else: distracted += 1
+                    cv2.putText(frame,
+                                f"Y:{int(yaw)} P:{int(pitch)}",
+                                (x1, y2 + 20),
+                                cv2.FONT_HERSHEY_SIMPLEX,
+                                0.5,
+                                (255, 255, 255),
+                                1)
 
-                # draw box + label
-                cv2.rectangle(frame, (x,y), (x+w_box, y+h_box), color, 2)
-                cv2.putText(frame, f"{label} Y:{int(s_yaw)} P:{int(s_pitch)}",
-                            (x, y-10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
+                    cv2.putText(frame,
+                                label,
+                                (x1, y1 - 10),
+                                cv2.FONT_HERSHEY_SIMPLEX,
+                                0.6,
+                                color,
+                                2)
 
     except Exception as e:
         print("Pose Error:", e)
 
-    cv2.putText(frame, f"Headcount: {headcount}", (10, 30),
-                cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255,255,255), 2)
+    # UI
+    cv2.putText(frame, f"Headcount: {headcount}",
+                (10, 30),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.7,
+                (255, 255, 255),
+                2)
 
     if return_attention:
         return frame, {"attentive": attentive, "distracted": distracted}
