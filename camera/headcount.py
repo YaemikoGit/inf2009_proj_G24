@@ -450,13 +450,34 @@ def detect_faces_and_pose(frame, return_attention=False):
                         save_centers(center_yaw, center_pitch)
                         print(f"Auto-calibrated centers -> yaw:{center_yaw:.2f} pitch:{center_pitch:.2f}")
 
-                    # Debug prints
-                    print(f"DEBUG | Raw Yaw: {yaw:6.1f} | Raw Pitch: {pitch:6.1f} | Smooth Y: {s_yaw:6.1f} | Smooth P: {s_pitch:6.1f} | C_yaw: {center_yaw:.1f} C_pitch: {center_pitch:.1f}")
+                    # --- Adaptive thresholds by face size (distance) ---
+                    # helper to compute angular difference correctly (handles wrap-around)
+                    def ang_diff(a, b):
+                        d = (a - b + 180.0) % 360.0 - 180.0
+                        return abs(d)
 
-                    # Thresholds (tune these after running calibrate_pose())
-                    diff_yaw = abs(s_yaw - center_yaw)
+                    # face height in pixels (use for distance estimate)
+                    face_h = float(h_box)
+                    # reference face height when close to camera (tweak if needed)
+                    REFERENCE_FACE_HEIGHT = 220.0
+                    # scale >1 when face is smaller (farther) so thresholds relax
+                    scale = max(0.6, min(3.0, REFERENCE_FACE_HEIGHT / max(20.0, face_h)))
+
+                    # base thresholds (close-up)
+                    BASE_YAW_THRESHOLD = 25.0
+                    BASE_PITCH_THRESHOLD = 20.0
+
+                    yaw_threshold = BASE_YAW_THRESHOLD * scale
+                    pitch_threshold = BASE_PITCH_THRESHOLD * scale
+
+                    # Debug prints (include thresholds)
+                    print(f"DEBUG | Raw Yaw: {yaw:6.1f} | Raw Pitch: {pitch:6.1f} | Smooth Y: {s_yaw:6.1f} | Smooth P: {s_pitch:6.1f} | C_yaw: {center_yaw:.1f} C_pitch: {center_pitch:.1f} | YT:{yaw_threshold:.1f} PT:{pitch_threshold:.1f}")
+
+                    # compute diffs using angular diff for yaw
+                    diff_yaw = ang_diff(s_yaw, center_yaw)
                     diff_pitch = abs(s_pitch - center_pitch)
-                    is_attentive = diff_yaw < 25 and diff_pitch < 20
+
+                    is_attentive = (diff_yaw < yaw_threshold) and (diff_pitch < pitch_threshold)
 
                     label = "Attentive" if is_attentive else "Distracted"
                     color = (0, 255, 0) if is_attentive else (0, 0, 255)
