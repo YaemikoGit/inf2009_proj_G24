@@ -391,16 +391,27 @@ def detect_faces_and_pose(frame, return_attention=False):
                     s_pitch = get_smoothed_pitch(pitch)
 
                     # Center + thresholds (you can tune later)
-                    center_yaw = 2.8
-                    center_pitch = 147.4
+                    calib_yaw = []
+                    calib_pitch = []
+
+                    # collect ~30–60 frames
+                    calib_yaw.append(yaw)
+                    calib_pitch.append(pitch)
+
+                    center_yaw = sum(calib_yaw) / len(calib_yaw)
+                    center_pitch = sum(calib_pitch) / len(calib_pitch)
 
                     yaw_threshold = 12
-                    pitch_threshold = 15
+                    pitch_threshold = 12
+                    down_pitch_threshold = 20
 
                     diff_yaw = s_yaw - center_yaw
                     diff_pitch = s_pitch - center_pitch
+                    
+                    looking_down = diff_pitch > down_pitch_threshold
+                    looking_side = abs(diff_yaw) > yaw_threshold
 
-                    is_attentive = abs(diff_yaw) < yaw_threshold and abs(diff_pitch) < pitch_threshold
+                    is_attentive = not (looking_down or looking_side)
                     
                     print(f"Yaw: {s_yaw:.2f}, Pitch: {s_pitch:.2f}")
 
