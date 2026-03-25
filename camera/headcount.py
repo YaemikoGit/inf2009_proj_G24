@@ -397,10 +397,12 @@ def detect_faces_and_pose(frame, return_attention=False):
                     yaw_threshold = 10
                     pitch_threshold = 15
 
-                    diff_yaw = abs(s_yaw - center_yaw)
-                    diff_pitch = abs(s_pitch - center_pitch)
+                    diff_yaw = s_yaw - center_yaw
+                    diff_pitch = s_pitch - center_pitch
 
-                    is_attentive = diff_yaw < yaw_threshold and diff_pitch < pitch_threshold
+                    is_attentive = abs(diff_yaw) < 10 and abs(diff_pitch) < 15
+                    
+                    print(f"Yaw: {s_yaw:.2f}, Pitch: {s_pitch:.2f}")
 
                     if is_attentive:
                         attentive += 1
