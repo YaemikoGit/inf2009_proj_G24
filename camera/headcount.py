@@ -263,11 +263,11 @@ def get_camera():
 
 # --- Correct 5-point Face Model (matches YuNet exactly) ---
 model_points = np.array([
-    (0.0,    0.0,     0.0),      # Nose tip
-    (-35.0,  40.0,   -30.0),     # Left eye
-    (35.0,   40.0,   -30.0),     # Right eye
-    (-30.0, -35.0,   -25.0),     # Left mouth
-    (30.0,  -35.0,   -25.0)      # Right mouth
+    (0.0, 0.0, 0.0),             # Nose tip
+    (-225.0, 170.0, -135.0),     # Left Eye (User's Left)
+    (225.0, 170.0, -135.0),      # Right Eye (User's Right)
+    (-150.0, -150.0, -125.0),    # Left Mouth Corner
+    (150.0, -150.0, -125.0)      # Right Mouth Corner
 ], dtype="double")
 
 center_yaw = None
