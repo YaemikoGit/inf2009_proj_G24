@@ -1,0 +1,40 @@
+Wed Mar 25 22:52:21 2026    publisher.prof
+
+         2539447 function calls (2488346 primitive calls) in 29.738 seconds
+
+   Ordered by: cumulative time
+   List reduced from 6096 to 30 due to restriction <30>
+
+   ncalls  tottime  percall  cumtime  percall filename:lineno(function)
+       62    0.014    0.000   48.083    0.776 /home/yolanda/projects/inf2009_proj_G24/env/lib/python3.13/site-packages/paho/mqtt/client.py:1122(_loop)
+       62    0.077    0.001   27.002    0.436 {built-in method select.select}
+        9    0.001    0.000   18.377    2.042 /home/yolanda/projects/inf2009_proj_G24/microphone/actual_noise.py:30(get_sound)
+        9    0.000    0.000   18.235    2.026 /home/yolanda/projects/inf2009_proj_G24/env/lib/python3.13/site-packages/sounddevice.py:386(wait)
+        9    0.000    0.000   18.229    2.025 /home/yolanda/projects/inf2009_proj_G24/env/lib/python3.13/site-packages/sounddevice.py:2676(wait)
+    17/14    0.002    0.000   17.209    1.229 /usr/lib/python3.13/threading.py:641(wait)
+       23    0.013    0.001   16.332    0.710 mqtt_publisher.py:618(publish_sound)
+      132    0.026    0.000    6.739    0.051 /home/yolanda/projects/inf2009_proj_G24/camera/headcount.py:317(detect_faces_and_pose)
+   1468/1    0.044    0.000    2.988    2.988 {built-in method builtins.exec}
+    16/14    0.004    0.000    2.957    0.211 /usr/lib/python3.13/threading.py:327(wait)
+   1615/9    0.011    0.000    2.818    0.313 <frozen importlib._bootstrap>:1349(_find_and_load)
+   1574/9    0.008    0.000    2.817    0.313 <frozen importlib._bootstrap>:1304(_find_and_load_unlocked)
+  1523/14    0.007    0.000    2.815    0.201 <frozen importlib._bootstrap>:911(_load_unlocked)
+  1233/14    0.004    0.000    2.815    0.201 <frozen importlib._bootstrap_external>:1020(exec_module)
+  3597/22    0.007    0.000    2.814    0.128 <frozen importlib._bootstrap>:480(_call_with_frames_removed)
+        1    0.000    0.000    2.542    2.542 /home/yolanda/projects/inf2009_proj_G24/microphone/actual_noise.py:1(<module>)
+   747/47    0.001    0.000    2.155    0.046 {built-in method builtins.__import__}
+      399    1.988    0.005    1.996    0.005 {method 'read' of 'cv2.VideoCapture' objects}
+        1    0.000    0.000    1.839    1.839 /home/yolanda/projects/inf2009_proj_G24/env/lib/python3.13/site-packages/sklearn/__init__.py:1(<module>)
+        1    0.000    0.000    1.837    1.837 /home/yolanda/projects/inf2009_proj_G24/env/lib/python3.13/site-packages/sklearn/base.py:1(<module>)
+        1    0.000    0.000    1.833    1.833 /home/yolanda/projects/inf2009_proj_G24/env/lib/python3.13/site-packages/sklearn/utils/__init__.py:1(<module>)
+        1    0.000    0.000    1.823    1.823 /home/yolanda/projects/inf2009_proj_G24/env/lib/python3.13/site-packages/sklearn/utils/_chunking.py:1(<module>)
+        1    0.000    0.000    1.822    1.822 /home/yolanda/projects/inf2009_proj_G24/env/lib/python3.13/site-packages/sklearn/utils/_param_validation.py:1(<module>)
+        1    0.000    0.000    1.634    1.634 /home/yolanda/projects/inf2009_proj_G24/env/lib/python3.13/site-packages/sklearn/utils/validation.py:1(<module>)
+        1    0.000    0.000    1.627    1.627 /home/yolanda/projects/inf2009_proj_G24/env/lib/python3.13/site-packages/sklearn/utils/_array_api.py:1(<module>)
+        1    0.000    0.000    1.497    1.497 /home/yolanda/projects/inf2009_proj_G24/env/lib/python3.13/site-packages/sklearn/utils/fixes.py:1(<module>)
+        4    0.002    0.000    1.132    0.283 mqtt_publisher.py:292(publish_light_status)
+        1    0.000    0.000    1.102    1.102 /home/yolanda/projects/inf2009_proj_G24/env/lib/python3.13/site-packages/scipy/stats/__init__.py:1(<module>)
+ 1736/930    0.004    0.000    1.036    0.001 <frozen importlib._bootstrap>:1390(_handle_fromlist)
+      625    0.001    0.000    0.771    0.001 /home/yolanda/projects/inf2009_proj_G24/env/lib/python3.13/site-packages/scipy/_lib/_docscrape.py:579(__init__)
+
+
