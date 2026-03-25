@@ -14,7 +14,7 @@ echo "Downloading face detector model..."
 wget -O models/face_detection_yunet_2023mar.onnx \
 https://github.com/opencv/opencv_zoo/raw/main/models/face_detection_yunet/face_detection_yunet_2023mar.onnx
 
-wget -O models/lbfmodel.yaml "https://raw.githubusercontent.com/kurnianggoro/GSOC2017/master/data/lbfmodel.yaml"
+# wget -O models/lbfmodel.yaml "https://raw.githubusercontent.com/kurnianggoro/GSOC2017/master/data/lbfmodel.yaml"
 
 
 echo "Download complete."
