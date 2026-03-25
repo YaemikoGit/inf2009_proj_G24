@@ -227,6 +227,7 @@ import os
 import glob
 import time
 import math
+import json
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -258,6 +259,99 @@ def get_camera():
             time.sleep(1)
     return camera
 
+
+center_yaw = 0.0
+center_pitch = 0.0
+CENTERS_FILE = os.path.join(BASE_DIR, "pose_centers.json")
+
+def load_centers():
+    global center_yaw, center_pitch
+    try:
+        with open(CENTERS_FILE, "r") as f:
+            d = json.load(f)
+            center_yaw = float(d.get("yaw", 0.0))
+            center_pitch = float(d.get("pitch", 0.0))
+            print(f"Loaded centers yaw={center_yaw:.2f} pitch={center_pitch:.2f}")
+    except Exception:
+        center_yaw = 0.0
+        center_pitch = 0.0
+
+def save_centers(yaw_val, pitch_val):
+    try:
+        with open(CENTERS_FILE, "w") as f:
+            json.dump({"yaw": float(yaw_val), "pitch": float(pitch_val)}, f)
+            print(f"Saved centers yaw={yaw_val:.2f} pitch={pitch_val:.2f}")
+    except Exception as e:
+        print("Failed to save centers:", e)
+
+# simple helper to extract yaw/pitch for the first detected face in a frame
+def get_pose_values(frame):
+    h, w = frame.shape[:2]
+    try:
+        yunet.setInputSize((w, h))
+        ret, faces = yunet.detect(frame)
+        if ret > 0 and faces is not None and len(faces) > 0:
+            face = faces[0]
+            x, y, w_box, h_box = face[:4].astype(int)
+            lm = face[5:15].reshape((5, 2))
+            left_eye, right_eye, nose, left_mouth, right_mouth = lm
+            chin = np.array([x + w_box / 2.0, y + h_box])
+            image_points = np.array([nose, chin, left_eye, right_eye, left_mouth, right_mouth], dtype="double")
+            focal_length = w
+            center = (w / 2, h / 2)
+            camera_matrix = np.array([[focal_length, 0, center[0]],[0, focal_length, center[1]],[0,0,1]], dtype="double")
+            ok, rot_vec, trans_vec = cv2.solvePnP(model_points, image_points, camera_matrix, np.zeros((4,1)), flags=cv2.SOLVEPNP_ITERATIVE)
+            if ok:
+                rmat, _ = cv2.Rodrigues(rot_vec)
+                sy = math.sqrt(rmat[0,0]*rmat[0,0] + rmat[1,0]*rmat[1,0])
+                singular = sy < 1e-6
+                if not singular:
+                    x_rot = math.atan2(rmat[2,1], rmat[2,2])
+                    y_rot = math.atan2(-rmat[2,0], sy)
+                    z_rot = math.atan2(rmat[1,0], rmat[0,0])
+                else:
+                    x_rot = math.atan2(-rmat[1,2], rmat[1,1])
+                    y_rot = math.atan2(-rmat[2,0], sy)
+                    z_rot = 0
+                roll = math.degrees(x_rot)
+                pitch = math.degrees(y_rot)
+                yaw = math.degrees(z_rot)
+                return True, (yaw, pitch, roll)
+    except Exception as e:
+        print("get_pose_values error:", e)
+    return False, (None, None, None)
+
+# calibration routine: call once while looking straight at camera
+def calibrate_pose(samples=50, delay=0.05):
+    cam = get_camera()
+    if cam is None:
+        print("No camera for calibration")
+        return
+    vals_yaw = []
+    vals_pitch = []
+    collected = 0
+    print("Calibration: please look straight at the camera for a few seconds...")
+    while collected < samples:
+        ret, frame = cam.read()
+        if not ret:
+            time.sleep(0.05)
+            continue
+        ok, (yaw, pitch, _) = get_pose_values(frame)
+        if ok and yaw is not None:
+            vals_yaw.append(yaw)
+            vals_pitch.append(pitch)
+            collected += 1
+        time.sleep(delay)
+    if len(vals_yaw) > 0:
+        mean_yaw = sum(vals_yaw) / len(vals_yaw)
+        mean_pitch = sum(vals_pitch) / len(vals_pitch)
+        save_centers(mean_yaw, mean_pitch)
+        load_centers()
+    else:
+        print("Calibration failed: no valid samples")
+
+# Load centers at module import
+load_centers()
 
 # Smoothing buffers
 pitch_history = []
@@ -411,7 +505,6 @@ def detect_faces_and_pose(frame, return_attention=False):
         return frame, {"attentive": attentive, "distracted": distracted}
 
     return frame
-
 
 def generate_frames():
     global camera
